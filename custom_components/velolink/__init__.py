@@ -189,7 +189,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Determine channel type
                 node = hub.get_node(bus_id, addr)
                 if not node:
-                    _LOGGER.warning("Device %s:%d not found, using default channel type", bus_id, addr)
+                    _LOGGER.warning(
+                        "Device %s:%d not found, using default channel type",
+                        bus_id,
+                        addr,
+                    )
                     ch_type = "in"
                 else:
                     if node.kind in ("output", "pwm"):
@@ -223,7 +227,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                 # Validate device exists
                 if not hub.get_node(bus_id, addr):
-                    _LOGGER.warning("Device %s:%d not found, creating name entry anyway", bus_id, addr)
+                    _LOGGER.warning(
+                        "Device %s:%d not found, creating name entry anyway",
+                        bus_id,
+                        addr,
+                    )
 
                 await storage.async_set_device_name(bus_id, addr, name)
 

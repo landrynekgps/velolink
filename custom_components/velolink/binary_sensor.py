@@ -195,7 +195,9 @@ class VelolinkInputEntity(BinarySensorEntity):
                 data["bus_id"] == self._node.bus_id
                 and data["address"] == self._node.address
             ):
-                _LOGGER.debug("Name update received for %s, refreshing state", self.unique_id)
+                _LOGGER.debug(
+                    "Name update received for %s, refreshing state", self.unique_id
+                )
                 self.async_write_ha_state()
 
         self._unsub_name_update = async_dispatcher_connect(

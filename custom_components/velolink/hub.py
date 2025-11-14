@@ -291,10 +291,8 @@ class TcpTransport:
         # FIX: Dodano timeout
         try:
             self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_connection(
-                    self._cfg.host, self._cfg.tcp_port
-                ),
-                timeout=self._connect_timeout
+                asyncio.open_connection(self._cfg.host, self._cfg.tcp_port),
+                timeout=self._connect_timeout,
             )
             _LOGGER.info("Connected to VeloGateway %s", self._bus_id)
         except asyncio.TimeoutError:
