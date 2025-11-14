@@ -24,6 +24,10 @@ Addr = int
 Channel = int
 
 
+# FIX: Dodano timeout konfiguracyjny
+DEFAULT_CONNECT_TIMEOUT = 5.0
+
+
 @dataclass
 class VelolinkNode:
     """Velolink device node."""
@@ -75,9 +79,44 @@ class SerialTransport:
         self._serial_transport = None
         self._serial_protocol = None
         self._writer_lock = asyncio.Lock()
+        # FIX: Dodano reconnect logic
+        self._running = False
+        self._reconnect_task: asyncio.Task | None = None
 
     async def async_start(self) -> None:
         """Start serial connection."""
+        self._running = True
+        self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+
+    async def async_stop(self) -> None:
+        """Stop serial connection."""
+        self._running = False
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+        if self._serial_transport:
+            self._serial_transport.close()
+            self._serial_transport = None
+
+    async def _reconnect_loop(self) -> None:
+        """Auto-reconnect loop for serial."""
+        while self._running:
+            try:
+                await self._connect()
+                # Czekamy na zatrzymanie
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                break
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                _LOGGER.warning(
+                    "Serial %s disconnected: %s, reconnecting in %ds",
+                    self._bus_id,
+                    err,
+                    GATEWAY_RECONNECT_DELAY_S,
+                )
+                await asyncio.sleep(GATEWAY_RECONNECT_DELAY_S)
+
+    async def _connect(self) -> None:
+        """Connect to serial port."""
         # pylint: disable=import-outside-toplevel,import-error
         import serial
         import serial_asyncio
@@ -113,16 +152,12 @@ class SerialTransport:
             )
         )
 
-    async def async_stop(self) -> None:
-        """Stop serial connection."""
-        if self._serial_transport:
-            self._serial_transport.close()
-            self._serial_transport = None
+        _LOGGER.info("Serial %s connected", self._bus_id)
 
     async def async_write_frame(self, frame: bytes) -> None:
         """Write frame to serial port."""
         if not self._serial_transport:
-            raise RuntimeError("Serial not started")
+            raise RuntimeError("Serial not connected")
         async with self._writer_lock:
             self._serial_transport.write(frame)
             await asyncio.sleep(0)
@@ -142,6 +177,14 @@ class _SerialProtocol(asyncio.Protocol):
         self.frame_cb = frame_cb
         self.bus_id = bus_id
         self.buffer = bytearray()
+
+    def connection_made(self, transport) -> None:
+        """Handle connection made."""
+        _LOGGER.debug("Serial connection established for %s", self.bus_id)
+
+    def connection_lost(self, exc) -> None:
+        """Handle connection lost."""
+        _LOGGER.warning("Serial connection lost for %s: %s", self.bus_id, exc)
 
     def data_received(self, data: bytes) -> None:
         """Handle received data."""
@@ -203,6 +246,7 @@ class TcpTransport:
         self._read_task: asyncio.Task | None = None
         self._running = False
         self._writer_lock = asyncio.Lock()
+        self._connect_timeout = DEFAULT_CONNECT_TIMEOUT  # FIX: Dodano timeout
 
     async def async_start(self) -> None:
         """Start TCP connection."""
@@ -244,11 +288,22 @@ class TcpTransport:
             self._bus_id,
         )
 
-        self._reader, self._writer = await asyncio.open_connection(
-            self._cfg.host, self._cfg.tcp_port
-        )
-
-        _LOGGER.info("Connected to VeloGateway %s", self._bus_id)
+        # FIX: Dodano timeout
+        try:
+            self._reader, self._writer = await asyncio.wait_for(
+                asyncio.open_connection(
+                    self._cfg.host, self._cfg.tcp_port
+                ),
+                timeout=self._connect_timeout
+            )
+            _LOGGER.info("Connected to VeloGateway %s", self._bus_id)
+        except asyncio.TimeoutError:
+            _LOGGER.error(
+                "Timeout connecting to %s:%d",
+                self._cfg.host,
+                self._cfg.tcp_port,
+            )
+            raise
 
     async def _read_loop(self) -> None:
         """Read loop for TCP packets."""
@@ -314,15 +369,6 @@ class TcpTransport:
             self._writer.write(packet)
             await self._writer.drain()
 
-    def _crc16(self, data: bytes) -> int:
-        """Calculate CRC16."""
-        crc = 0xFFFF
-        for byte in data:
-            crc ^= byte
-            for _ in range(8):
-                crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
-        return crc
-
 
 # ========== Demo Transport ==========
 class DemoTransport:
@@ -341,6 +387,7 @@ class DemoTransport:
         self._frame_cb = frame_cb
         self._running = False
         self._simulator_task: asyncio.Task | None = None
+        self._cfg = cfg  # FIX: Przechowujemy cfg
 
     async def async_start(self) -> None:
         """Start demo simulation."""
@@ -390,12 +437,11 @@ class DemoTransport:
 
     async def _simulation_loop(self) -> None:
         """Main simulation loop."""
-        # FIX: Zwiększono opóźnienie, aby uniknąć race condition
         _LOGGER.info(
             "Demo %s: Simulation loop started, waiting before discovery...",
             self._bus_id,
         )
-        await asyncio.sleep(5)  # Zmieniono z 2 na 5 sekund
+        await asyncio.sleep(5)
         await self._simulate_discovery()
         asyncio.create_task(self._simulate_input_changes())
         asyncio.create_task(self._simulate_analog_changes())
@@ -430,7 +476,6 @@ class DemoTransport:
             frame = VelolinkHub._build_frame(
                 addr=dev["addr"], func=FunctionCode.HELLO, payload=payload
             )
-            # FIX: Dodano logowanie, aby śledzić wysyłane ramki
             _LOGGER.info(
                 "Demo %s: Sending HELLO frame for device at address %d",
                 self._bus_id,
@@ -765,7 +810,6 @@ class VelolinkHub:
             return
 
         self._nodes[key] = node
-        # FIX: Dodano logowanie, aby śledzić rejestrację węzłów
         _LOGGER.info(
             "New node: %s @ %s:%d. Sending signal.",
             node.kind,
@@ -800,8 +844,6 @@ class VelolinkHub:
 
     def _parse_frame(self, frame: bytes) -> dict:
         """Parse RS485 frame."""
-        # pylint: disable=too-many-locals,too-many-branches
-        # pylint: disable=too-many-statements,too-many-return-statements
         if len(frame) < 8 or frame[0] != 0xAA or frame[1] != 0x55:
             raise ValueError("bad preamble")
 

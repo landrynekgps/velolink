@@ -40,7 +40,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Nie można połączyć się z VeloGateway.",
+      "cannot_connect": "Nie można połączyć się z VeloGateway (timeout). Sprawdź adres IP i port.",
       "ports_identical": "Porty RS485 muszą być różne.",
       "unknown": "Wystąpił nieznany błąd."
     },
@@ -48,9 +48,9 @@
       "already_configured": "To urządzenie jest już skonfigurowane.",
       "no_channels": "Brak dostępnych kanałów do konfiguracji.",
       "no_devices": "Nie wykryto żadnych urządzeń.",
-      "no_hat_ports_found": "Nie znaleziono portów charakterystycznych dla Raspberry Pi HAT (np. /dev/ttyAMA0).",
-      "no_usb_ports_found": "Nie znaleziono żadnych portów USB (np. /dev/ttyUSB0). Upewnij się, że adapter jest podłączony.",
-      "integration_not_setup": "Integracja nie jest poprawnie skonfigurowana. Usuń ją i dodaj ponownie."
+      "no_hat_ports_found": "Nie znaleziono portów charakterystycznych dla Raspberry Pi HAT (np. /dev/ttyAMA0). Sprawdź czy HAT jest prawidłowo podłączony i aktywny w config.txt.",
+      "no_usb_ports_found": "Nie znaleziono żadnych portów USB (np. /dev/ttyUSB0). Upewnij się, że adapter jest podłączony i masz uprawnienia.",
+      "integration_not_setup": "Integracja nie jest poprawnie skonfigurowana. Spróbuj ponownie dodać ją w Integracjach."
     }
   },
   "options": {
@@ -65,7 +65,7 @@
       },
       "scan_devices": {
         "title": "Skanowanie urządzeń",
-        "description": "Skanowanie może potrwać kilka sekund.",
+        "description": "Skanowanie może potrwać kilka sekund. Proszę czekać...",
         "data": {
           "bus_selection": "Magistrala do przeskanowania"
         }

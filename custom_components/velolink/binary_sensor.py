@@ -22,7 +22,7 @@ from .const import (
     DEVICE_CLASS_INPUT_MAP,
     POLARITY_NC,
     signal_new_node,
-    signal_device_name_updated,  # <-- NOWY IMPORT
+    signal_device_name_updated,
 )
 from .hub import VelolinkHub, VelolinkNode
 from .storage import VelolinkStorage
@@ -42,6 +42,7 @@ async def async_setup_entry(
 
     @callback
     def _handle_new_node(node: VelolinkNode) -> None:
+        _LOGGER.debug("New node for binary_sensor: %s", node)
         node_kinds = (NODE_KIND_INPUT, NODE_KIND_VELOSWITCH, NODE_KIND_VELOMOTION)
         if node.kind not in node_kinds:
             return
@@ -50,13 +51,15 @@ async def async_setup_entry(
         for ch in range(node.channels):
             uid = f"{node.bus_id}-{node.address}-in-{ch}"
             if uid in created:
+                _LOGGER.debug("Binary sensor already exists: %s", uid)
                 continue
             created.add(uid)
             entities.append(
                 VelolinkInputEntity(hass, entry.entry_id, hub, storage, node, ch)
-            )  # <-- FIX: Przekazanie entry_id
+            )
 
         if entities:
+            _LOGGER.info("Adding %d binary sensor entities", len(entities))
             async_add_entities(entities)
 
     unsub = async_dispatcher_connect(
@@ -81,16 +84,14 @@ class VelolinkInputEntity(BinarySensorEntity):
     ) -> None:
         """Initialize entity."""
         self._hass = hass
-        self._entry_id = entry_id  # <-- FIX: Przechowaj entry_id
+        self._entry_id = entry_id
         self._hub = hub
         self._storage = storage
         self._node = node
         self._ch = ch
         self._state = False
         self._unsub: Callable[[], None] | None = None
-        self._unsub_name_update: Callable[[], None] | None = (
-            None  # <-- FIX: Nowy subskrybent
-        )
+        self._unsub_name_update: Callable[[], None] | None = None
 
         self._load_config()
 
@@ -101,6 +102,12 @@ class VelolinkInputEntity(BinarySensorEntity):
         )
         self._device_class_key = cfg.get("device_class", "none")
         self._polarity = cfg.get("polarity", "NO")
+        _LOGGER.debug(
+            "Loaded config for %s: device_class=%s, polarity=%s",
+            self.unique_id,
+            self._device_class_key,
+            self._polarity,
+        )
 
     @property
     def unique_id(self) -> str:
@@ -120,7 +127,7 @@ class VelolinkInputEntity(BinarySensorEntity):
             return f"VeloSwitch {self._node.address}:{self._ch}"
 
         if self._node.kind == NODE_KIND_VELOMOTION:
-            return f"VeloMotion {self._node.address}"
+            return f"VeloMotion {self._node.address}:{self._ch}"  # FIX: Dodano numer kanału
 
         return f"Velolink IN {self._node.address}:{self._ch}"
 
@@ -180,14 +187,15 @@ class VelolinkInputEntity(BinarySensorEntity):
         self._unsub = self._hub.subscribe_input(
             self._node.bus_id, self._node.address, self._ch, _on_change
         )
+        _LOGGER.debug("Subscribed to input changes for %s", self.unique_id)
 
-        # <-- FIX: Dodaj subskrypcję na zmianę nazwy -->
         @callback
         def _on_name_update(data: dict) -> None:
             if (
                 data["bus_id"] == self._node.bus_id
                 and data["address"] == self._node.address
             ):
+                _LOGGER.debug("Name update received for %s, refreshing state", self.unique_id)
                 self.async_write_ha_state()
 
         self._unsub_name_update = async_dispatcher_connect(
@@ -199,6 +207,6 @@ class VelolinkInputEntity(BinarySensorEntity):
         if self._unsub:
             self._unsub()
             self._unsub = None
-        if self._unsub_name_update:  # <-- FIX: Odsubskrybuj
+        if self._unsub_name_update:
             self._unsub_name_update()
             self._unsub_name_update = None

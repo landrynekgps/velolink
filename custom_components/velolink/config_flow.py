@@ -52,6 +52,7 @@ from .storage import VelolinkStorage
 _LOGGER = logging.getLogger(__name__)
 
 # Stałe dla nowego wyboru
+# FIX: Ujednolicone klucze tłumaczeń - teraz używamy "connection_choice" wszędzie
 CONN_CHOICE_RPI_HAT = "rpi_hat"
 CONN_CHOICE_USB = "usb"
 CONN_CHOICE_TCP = "tcp"
@@ -74,7 +75,8 @@ def _list_serial_ports() -> dict[str, str]:
             else:
                 # To prawdopodobnie adapter USB
                 ports[device_path] = description
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception as ex:  # pylint: disable=broad-exception-caught
+        _LOGGER.warning("Failed to list serial ports, using fallback: %s", ex)
         # Fallback dla środowisk bez pyserial
         ports["/dev/ttyAMA0"] = "Raspberry Pi HAT (/dev/ttyAMA0)"
         ports["/dev/ttyUSB0"] = "USB Adapter (/dev/ttyUSB0)"
@@ -161,9 +163,10 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_hat_ports_found")
 
         if user_input is not None:
-            user_input[CONF_PORT1] = hat_ports.popitem()[
-                0
-            ]  # Zawsze bierz pierwszy znaleziony port HAT
+            # FIX: Użyj pierwszego znalezionego portu HAT, ale zaloguj który
+            selected_port = next(iter(hat_ports.keys()))
+            _LOGGER.info("Using HAT port: %s", selected_port)
+            user_input[CONF_PORT1] = selected_port
             return await self._create_serial_entry(user_input, "Velolink RPi HAT")
 
         # Dla HAT nie pytamy o port, zakładamy że jest jeden
@@ -286,8 +289,11 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
         if DOMAIN not in self.hass.data:
             return self.async_abort(reason="integration_not_setup")
 
+        hub: VelolinkHub = self.hass.data[DOMAIN][self._config_entry.entry_id]
+
         if user_input is not None:
             bus_id = user_input["bus_selection"]
+            _LOGGER.info("Options flow: scanning bus %s", bus_id)
             # Call the discovery service
             await self.hass.services.async_call(
                 DOMAIN,
@@ -303,7 +309,6 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
                 },
             )
 
-        hub: VelolinkHub = self.hass.data[DOMAIN][self._config_entry.entry_id]
         buses = list(hub._buses_cfg.keys())
         options = {bus: f"Magistrala {bus.title()}" for bus in buses}
         return self.async_show_form(

@@ -41,7 +41,7 @@ from .const import (
     POLARITY_NO,
     POLARITY_NC,
     DEFAULT_BAUDRATE,
-    signal_device_name_updated,  # <-- NOWY IMPORT
+    signal_device_name_updated,
 )
 from .hub import VelolinkHub, VelolinkBusConfig
 from .storage import VelolinkStorage
@@ -59,9 +59,9 @@ PLATFORMS: list[Platform] = [
 # Service schemas
 SERVICE_SET_CHANNEL_CONFIG_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_BUS_ID): cv.string,
-        vol.Required(ATTR_ADDRESS): cv.positive_int,
-        vol.Required(ATTR_CHANNEL): cv.positive_int,
+        vol.Required(ATTR_BUS_ID): vol.In(["bus1", "bus2"]),
+        vol.Required(ATTR_ADDRESS): vol.Range(min=1, max=254),
+        vol.Required(ATTR_CHANNEL): vol.Range(min=0, max=31),
         vol.Optional(ATTR_DEVICE_CLASS): vol.In(
             list(DEVICE_CLASS_INPUT_MAP.keys()) + list(DEVICE_CLASS_OUTPUT_MAP.keys())
         ),
@@ -71,9 +71,9 @@ SERVICE_SET_CHANNEL_CONFIG_SCHEMA = vol.Schema(
 
 SERVICE_SET_DEVICE_NAME_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_BUS_ID): cv.string,
-        vol.Required(ATTR_ADDRESS): cv.positive_int,
-        vol.Required(ATTR_DEVICE_NAME): cv.string,
+        vol.Required(ATTR_BUS_ID): vol.In(["bus1", "bus2"]),
+        vol.Required(ATTR_ADDRESS): vol.Range(min=1, max=254),
+        vol.Required(ATTR_DEVICE_NAME): vol.All(str, vol.Length(min=1, max=64)),
     }
 )
 
@@ -175,39 +175,67 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         async def handle_set_channel_config(call: ServiceCall) -> None:
             """Handle set channel config service."""
-            bus_id = call.data[ATTR_BUS_ID]
-            addr = call.data[ATTR_ADDRESS]
-            ch = call.data[ATTR_CHANNEL]
-            device_class = call.data.get(ATTR_DEVICE_CLASS)
-            polarity = call.data.get(ATTR_POLARITY)
+            try:
+                bus_id = call.data[ATTR_BUS_ID]
+                addr = call.data[ATTR_ADDRESS]
+                ch = call.data[ATTR_CHANNEL]
+                device_class = call.data.get(ATTR_DEVICE_CLASS)
+                polarity = call.data.get(ATTR_POLARITY)
 
-            # Determine channel type (simplified)
-            ch_type = "in"
+                # Validate bus exists
+                if bus_id not in hub._transports:
+                    raise ValueError(f"Bus {bus_id} not found")
 
-            await storage.async_set_channel_config(
-                bus_id, addr, ch_type, ch, device_class, polarity
-            )
+                # Determine channel type
+                node = hub.get_node(bus_id, addr)
+                if not node:
+                    _LOGGER.warning("Device %s:%d not found, using default channel type", bus_id, addr)
+                    ch_type = "in"
+                else:
+                    if node.kind in ("output", "pwm"):
+                        ch_type = "out"
+                    else:
+                        ch_type = "in"
 
-            # Fire event to update entities
-            hass.bus.async_fire(
-                f"{DOMAIN}_config_updated",
-                {"bus_id": bus_id, "address": addr, "channel": ch},
-            )
+                await storage.async_set_channel_config(
+                    bus_id, addr, ch_type, ch, device_class, polarity
+                )
+
+                # Fire event to update entities
+                hass.bus.async_fire(
+                    f"{DOMAIN}_config_updated",
+                    {"bus_id": bus_id, "address": addr, "channel": ch},
+                )
+            except Exception as ex:
+                _LOGGER.error("Failed to set channel config: %s", ex)
+                raise
 
         async def handle_set_device_name(call: ServiceCall) -> None:
             """Handle set device name service."""
-            bus_id = call.data[ATTR_BUS_ID]
-            addr = call.data[ATTR_ADDRESS]
-            name = call.data[ATTR_DEVICE_NAME]
+            try:
+                bus_id = call.data[ATTR_BUS_ID]
+                addr = call.data[ATTR_ADDRESS]
+                name = call.data[ATTR_DEVICE_NAME]
 
-            await storage.async_set_device_name(bus_id, addr, name)
+                # Validate bus exists
+                if bus_id not in hub._transports:
+                    raise ValueError(f"Bus {bus_id} not found")
 
-            # <-- FIX: Wyślij sygnał o aktualizacji nazwy -->
-            async_dispatcher_send(
-                hass,
-                signal_device_name_updated(entry.entry_id),
-                {"bus_id": bus_id, "address": addr},
-            )
+                # Validate device exists
+                if not hub.get_node(bus_id, addr):
+                    _LOGGER.warning("Device %s:%d not found, creating name entry anyway", bus_id, addr)
+
+                await storage.async_set_device_name(bus_id, addr, name)
+
+                # Send signal to update entities
+                async_dispatcher_send(
+                    hass,
+                    signal_device_name_updated(entry.entry_id),
+                    {"bus_id": bus_id, "address": addr},
+                )
+            except Exception as ex:
+                _LOGGER.error("Failed to set device name: %s", ex)
+                raise
 
         # Register all services
         hass.services.async_register(
@@ -252,8 +280,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hub.async_stop()
 
-    # Remove services if this was the last instance
+    # Remove services only if this was the last instance
     if not hass.data[DOMAIN]:
+        _LOGGER.info("Removing Velolink services")
         hass.services.async_remove(DOMAIN, SERVICE_DISCOVERY_BUS1)
         hass.services.async_remove(DOMAIN, SERVICE_DISCOVERY_BUS2)
         hass.services.async_remove(DOMAIN, SERVICE_DISCOVERY_ALL)
