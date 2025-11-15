@@ -68,7 +68,7 @@ def _list_serial_ports() -> dict[str, str]:
         for port in list_ports.comports():
             device_path = port.device
             description = f"{port.description} ({device_path})"
-            
+
             # SZEROKIE wykrywanie RPi HAT
             if any(x in device_path for x in ["ttyAMA", "serial", "ttySC", "ttyS0"]):
                 ports[device_path] = f"Raspberry Pi HAT ({device_path})"
@@ -78,7 +78,7 @@ def _list_serial_ports() -> dict[str, str]:
                 _LOGGER.info("Detected USB port: %s", device_path)
     except Exception as ex:
         _LOGGER.warning("Failed to list serial ports with pyserial: %s", ex)
-    
+
     # ZAWSZE dodaj standardowe porty RPi jako fallback
     default_ports = {
         "/dev/ttyAMA0": "RPi HAT (/dev/ttyAMA0) - Standardowy UART",
@@ -86,7 +86,7 @@ def _list_serial_ports() -> dict[str, str]:
         "/dev/ttyS0": "RPi HAT (/dev/ttyS0) - Mini UART",
         "/dev/ttyUSB0": "USB Adapter (/dev/ttyUSB0) - Adapter USB-RS485",
     }
-    
+
     for port, desc in default_ports.items():
         if port not in ports:
             ports[port] = desc
