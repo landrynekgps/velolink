@@ -52,7 +52,6 @@ from .storage import VelolinkStorage
 _LOGGER = logging.getLogger(__name__)
 
 # Stałe dla nowego wyboru
-# FIX: Ujednolicone klucze tłumaczeń - teraz używamy "connection_choice" wszędzie
 CONN_CHOICE_RPI_HAT = "rpi_hat"
 CONN_CHOICE_USB = "usb"
 CONN_CHOICE_TCP = "tcp"
@@ -61,25 +60,39 @@ CONN_CHOICE_DEMO = "demo"
 
 def _list_serial_ports() -> dict[str, str]:
     """List and categorize available serial ports."""
-    # pylint: disable=import-outside-toplevel,import-error
     ports = {}
     try:
         from serial.tools import list_ports
 
+        _LOGGER.debug("Scanning for serial ports...")
         for port in list_ports.comports():
             device_path = port.device
             description = f"{port.description} ({device_path})"
-            if "ttyAMA" in device_path or "serial" in device_path:
-                # To prawdopodobnie RPi HAT
+            
+            # SZEROKIE wykrywanie RPi HAT
+            if any(x in device_path for x in ["ttyAMA", "serial", "ttySC", "ttyS0"]):
                 ports[device_path] = f"Raspberry Pi HAT ({device_path})"
-            else:
-                # To prawdopodobnie adapter USB
+                _LOGGER.info("Detected RPi HAT port: %s", device_path)
+            elif "USB" in device_path or "ttyUSB" in device_path:
                 ports[device_path] = description
-    except Exception as ex:  # pylint: disable=broad-exception-caught
-        _LOGGER.warning("Failed to list serial ports, using fallback: %s", ex)
-        # Fallback dla środowisk bez pyserial
-        ports["/dev/ttyAMA0"] = "Raspberry Pi HAT (/dev/ttyAMA0)"
-        ports["/dev/ttyUSB0"] = "USB Adapter (/dev/ttyUSB0)"
+                _LOGGER.info("Detected USB port: %s", device_path)
+    except Exception as ex:
+        _LOGGER.warning("Failed to list serial ports with pyserial: %s", ex)
+    
+    # ZAWSZE dodaj standardowe porty RPi jako fallback
+    default_ports = {
+        "/dev/ttyAMA0": "RPi HAT (/dev/ttyAMA0) - Standardowy UART",
+        "/dev/ttySC0": "RPi HAT (/dev/ttySC0) - SC16IS752",
+        "/dev/ttyS0": "RPi HAT (/dev/ttyS0) - Mini UART",
+        "/dev/ttyUSB0": "USB Adapter (/dev/ttyUSB0) - Adapter USB-RS485",
+    }
+    
+    for port, desc in default_ports.items():
+        if port not in ports:
+            ports[port] = desc
+            _LOGGER.debug("Added fallback port: %s", port)
+
+    _LOGGER.info("Final port list: %s", list(ports.keys()))
     return ports
 
 
@@ -95,7 +108,7 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Handle the initial step where the user chooses the connection type."""
+        """Handle the initial step."""
         if user_input is not None:
             self._connection_type = user_input["connection_choice"]
             if self._connection_type == CONN_CHOICE_RPI_HAT:
@@ -107,23 +120,15 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._connection_type == CONN_CHOICE_DEMO:
                 return await self.async_step_demo()
 
-        # Opcja demo jest zawsze dostępna
-        options = {CONN_CHOICE_DEMO: "Tryb Demo (testowanie bez sprzętu)"}
-
-        # Sprawdź, czy są porty charakterystyczne dla RPi HAT
-        all_ports = await self.hass.async_add_executor_job(_list_serial_ports)
-        has_rpi_hat_port = any("ttyAMA" in p or "serial" in p for p in all_ports)
-
-        if has_rpi_hat_port:
-            options[CONN_CHOICE_RPI_HAT] = "Raspberry Pi HAT"
-
-        if all_ports:
-            options[CONN_CHOICE_USB] = "Adapter USB-RS485"
-
-        options[CONN_CHOICE_TCP] = "TCP (VeloGateway)"
+        # FIX: ZAWSZE pokazuj wszystkie opcje
+        options = {
+            CONN_CHOICE_RPI_HAT: "Raspberry Pi HAT (ttyAMA0)",
+            CONN_CHOICE_USB: "Adapter USB-RS485",
+            CONN_CHOICE_TCP: "TCP (VeloGateway)",
+            CONN_CHOICE_DEMO: "Tryb Demo (testowanie bez sprzętu)",
+        }
 
         schema = vol.Schema({vol.Required("connection_choice"): vol.In(options)})
-
         return self.async_show_form(step_id="user", data_schema=schema)
 
     async def _create_serial_entry(
@@ -163,13 +168,11 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_hat_ports_found")
 
         if user_input is not None:
-            # FIX: Użyj pierwszego znalezionego portu HAT, ale zaloguj który
             selected_port = next(iter(hat_ports.keys()))
             _LOGGER.info("Using HAT port: %s", selected_port)
             user_input[CONF_PORT1] = selected_port
             return await self._create_serial_entry(user_input, "Velolink RPi HAT")
 
-        # Dla HAT nie pytamy o port, zakładamy że jest jeden
         schema = vol.Schema(
             {
                 vol.Required(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): cv.positive_int,
@@ -265,7 +268,6 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self._config_entry = config_entry
-        # Store intermediate data between steps
         self._channel_to_edit: dict[str, Any] | None = None
         self._device_to_edit: dict[str, Any] | None = None
 
@@ -294,13 +296,11 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             bus_id = user_input["bus_selection"]
             _LOGGER.info("Options flow: scanning bus %s", bus_id)
-            # Call the discovery service
             await self.hass.services.async_call(
                 DOMAIN,
                 f"discovery_{bus_id}",
-                blocking=True,  # Wait for the service to finish
+                blocking=True,
             )
-            # Show a result message
             return self.async_show_form(
                 step_id="scan_result",
                 data_schema=vol.Schema({}),
@@ -334,7 +334,6 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
             f"{self._config_entry.entry_id}_storage"
         ]
 
-        # Build a list of all available channels
         channels = {}
         for (bus_id, addr), node in hub._nodes.items():
             ch_type = None
@@ -403,7 +402,6 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
             parts = self._channel_to_edit.split("-")
             bus_id, addr, ch_type, ch = parts[0], int(parts[1]), parts[2], int(parts[3])
 
-            # Call the service to update the config
             await self.hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_CHANNEL_CONFIG,
@@ -416,10 +414,8 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
                 },
                 blocking=True,
             )
-            # Options flow doesn't change the main config_entry.data, so we just save an empty dict to exit.
             return self.async_create_entry(title="", data={})
 
-        # Should not happen, but as a fallback
         return self.async_abort(reason="unknown")
 
     async def async_step_edit_device_name(
@@ -473,7 +469,6 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None and self._device_to_edit:
             bus_id, addr = self._device_to_edit.split("-")
 
-            # Call the service to update the name
             await self.hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_DEVICE_NAME,

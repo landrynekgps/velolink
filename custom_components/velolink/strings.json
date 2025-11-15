@@ -48,8 +48,8 @@
       "already_configured": "To urządzenie jest już skonfigurowane.",
       "no_channels": "Brak dostępnych kanałów do konfiguracji.",
       "no_devices": "Nie wykryto żadnych urządzeń.",
-      "no_hat_ports_found": "Nie znaleziono portów charakterystycznych dla Raspberry Pi HAT (np. /dev/ttyAMA0). Sprawdź czy HAT jest prawidłowo podłączony i aktywny w config.txt.",
-      "no_usb_ports_found": "Nie znaleziono żadnych portów USB (np. /dev/ttyUSB0). Upewnij się, że adapter jest podłączony i masz uprawnienia.",
+      "no_hat_ports_found": "Nie znaleziono portów charakterystycznych dla Raspberry Pi HAT. Sprawdź czy HAT jest prawidłowo podłączony i aktywny w config.txt.",
+      "no_usb_ports_found": "Nie znaleziono żadnych portów USB. Upewnij się, że adapter jest podłączony i masz uprawnienia.",
       "integration_not_setup": "Integracja nie jest poprawnie skonfigurowana. Spróbuj ponownie dodać ją w Integracjach."
     }
   },
