@@ -1,8 +1,8 @@
 {
   "domain": "velolink",
   "name": "Velolink",
-  "version": "1.0.5",
-  "icon": "icon.png",
+  "version": "0.0.1b",
+  "icon": "https://raw.githubusercontent.com/landrynekgps/velolink-ha/main/custom_components/velolink/icon.png",
   "documentation": "https://github.com/landrynekgps/velolink-ha",
   "issue_tracker": "https://github.com/landrynekgps/velolink-ha/issues",
   "requirements": ["pyserial-asyncio>=0.6"],
