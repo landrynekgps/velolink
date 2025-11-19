@@ -129,3 +129,7 @@ class FunctionCode(IntEnum):
 # Capabilities
 CAP_SUPPORTS_CONFIG = 0x01
 CAP_PUSH_EVENTS = 0x04
+
+# FIX: Dodano stałe specyficzne dla RPi
+RPI_HAT_DETECT_TIMEOUT = 5.0
+RPI_HAT_RETRY_COUNT = 3
