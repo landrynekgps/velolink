@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Tuple, List
 
@@ -62,7 +63,7 @@ class VelolinkBusConfig:
 
 # ========== Serial Transport ==========
 class SerialTransport:
-    """Serial RS485 transport with timeout support."""
+    """Serial RS485 transport."""
 
     def __init__(
         self,
@@ -79,9 +80,9 @@ class SerialTransport:
         self._serial_transport = None
         self._serial_protocol = None
         self._writer_lock = asyncio.Lock()
+        # FIX: Dodano reconnect logic
         self._running = False
         self._reconnect_task: asyncio.Task | None = None
-        self._connect_timeout = DEFAULT_CONNECT_TIMEOUT  # FIX: Dodano timeout
 
     async def async_start(self) -> None:
         """Start serial connection."""
@@ -102,7 +103,7 @@ class SerialTransport:
         while self._running:
             try:
                 await self._connect()
-                # Czekamy na zatrzymanie lub błąd
+                # Czekamy na zatrzymanie
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
                 break
@@ -116,18 +117,28 @@ class SerialTransport:
                 await asyncio.sleep(GATEWAY_RECONNECT_DELAY_S)
 
     async def _connect(self) -> None:
-        """Connect to serial port with timeout."""
+        """Connect to serial port."""
         # pylint: disable=import-outside-toplevel,import-error
         import serial
         import serial_asyncio
 
         _LOGGER.info(
-            "Starting Serial %s on %s @ %d (timeout: %ds)",
+            "Starting Serial %s on %s @ %d",
             self._bus_id,
             self._cfg.port,
             self._cfg.baudrate,
-            self._connect_timeout,
         )
+
+        # FIX: Sprawdź, czy port istnieje i jest dostępny
+        if not os.path.exists(self._cfg.port):
+            raise RuntimeError(f"Serial port {self._cfg.port} does not exist")
+        
+        # FIX: Sprawdź uprawnienia do portu
+        if not os.access(self._cfg.port, os.R_OK | os.W_OK):
+            _LOGGER.warning(
+                "Permission denied for serial port %s. User may need to be added to dialout group.",
+                self._cfg.port
+            )
 
         loop = asyncio.get_running_loop()
         rs485_settings = None
@@ -137,22 +148,28 @@ class SerialTransport:
                 rs485_settings = serial.rs485.RS485Settings(
                     rts_level_for_tx=True, rts_level_for_rx=False
                 )
-                _LOGGER.debug("RS485 RTS toggle enabled")
             except Exception:  # pylint: disable=broad-exception-caught
-                _LOGGER.warning("RS485Settings not supported on this platform")
+                _LOGGER.warning("RS485Settings not supported")
 
         try:
-            # FIX: Dodano timeout z użyciem asyncio.wait_for
-            connect_coro = serial_asyncio.create_serial_connection(
-                loop,
-                lambda: _SerialProtocol(self._hass, self._frame_cb, self._bus_id),
-                url=self._cfg.port,
-                baudrate=self._cfg.baudrate,
-                bytesize=serial.EIGHTBITS,
-                parity=serial.PARITY_NONE,
-                stopbits=serial.STOPBITS_ONE,
-                rs485_mode=rs485_settings,
+            self._serial_transport, self._serial_protocol = (
+                await serial_asyncio.create_serial_connection(
+                    loop,
+                    lambda: _SerialProtocol(self._hass, self._frame_cb, self._bus_id),
+                    url=self._cfg.port,
+                    baudrate=self._cfg.baudrate,
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    rs485_mode=rs485_settings,
+                    # FIX: Dodajemy timeout dla lepszej obsługi błędów
+                    timeout=1,
+                )
             )
+<<<<<<< HEAD
+        except serial.SerialException as e:
+            _LOGGER.error("Failed to connect to serial port %s: %s", self._cfg.port, e)
+=======
 
             self._serial_transport, self._serial_protocol = await asyncio.wait_for(
                 connect_coro,
@@ -173,7 +190,10 @@ class SerialTransport:
                 self._cfg.port,
                 ex,
             )
+>>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
             raise
+
+        _LOGGER.info("Serial %s connected", self._bus_id)
 
     async def async_write_frame(self, frame: bytes) -> None:
         """Write frame to serial port."""
@@ -205,10 +225,7 @@ class _SerialProtocol(asyncio.Protocol):
 
     def connection_lost(self, exc) -> None:
         """Handle connection lost."""
-        if exc:
-            _LOGGER.warning("Serial connection lost for %s: %s", self.bus_id, exc)
-        else:
-            _LOGGER.info("Serial connection closed for %s", self.bus_id)
+        _LOGGER.warning("Serial connection lost for %s: %s", self.bus_id, exc)
 
     def data_received(self, data: bytes) -> None:
         """Handle received data."""
@@ -221,7 +238,7 @@ class _SerialProtocol(asyncio.Protocol):
             self._hass.loop.call_soon_threadsafe(self.frame_cb, self.bus_id, frame)
 
         if len(self.buffer) > 512:
-            _LOGGER.warning("Bus %s: buffer overflow, clearing", self.bus_id)
+            _LOGGER.warning("Bus %s: buffer overflow", self.bus_id)
             self.buffer.clear()
 
     def _extract_one_frame(self) -> Optional[bytes]:
@@ -270,7 +287,7 @@ class TcpTransport:
         self._read_task: asyncio.Task | None = None
         self._running = False
         self._writer_lock = asyncio.Lock()
-        self._connect_timeout = DEFAULT_CONNECT_TIMEOUT
+        self._connect_timeout = DEFAULT_CONNECT_TIMEOUT  # FIX: Dodano timeout
 
     async def async_start(self) -> None:
         """Start TCP connection."""
@@ -304,15 +321,15 @@ class TcpTransport:
                 await asyncio.sleep(GATEWAY_RECONNECT_DELAY_S)
 
     async def _connect(self) -> None:
-        """Connect to gateway with timeout."""
+        """Connect to gateway."""
         _LOGGER.info(
-            "Connecting to VeloGateway %s:%d (bus=%s, timeout: %ds)",
+            "Connecting to VeloGateway %s:%d (bus=%s)",
             self._cfg.host,
             self._cfg.tcp_port,
             self._bus_id,
-            self._connect_timeout,
         )
 
+        # FIX: Dodano timeout
         try:
             self._reader, self._writer = await asyncio.wait_for(
                 asyncio.open_connection(self._cfg.host, self._cfg.tcp_port),
@@ -321,17 +338,9 @@ class TcpTransport:
             _LOGGER.info("Connected to VeloGateway %s", self._bus_id)
         except asyncio.TimeoutError:
             _LOGGER.error(
-                "Timeout connecting to %s:%d. Check IP address and port.",
+                "Timeout connecting to %s:%d",
                 self._cfg.host,
                 self._cfg.tcp_port,
-            )
-            raise
-        except Exception as ex:
-            _LOGGER.error(
-                "Failed to connect to %s:%d: %s",
-                self._cfg.host,
-                self._cfg.tcp_port,
-                ex,
             )
             raise
 
@@ -342,7 +351,7 @@ class TcpTransport:
         while self._running:
             data = await self._reader.read(1024)
             if not data:
-                raise ConnectionError("TCP connection closed by peer")
+                raise ConnectionError("TCP connection closed")
 
             buffer.extend(data)
 
@@ -393,7 +402,7 @@ class TcpTransport:
             length = len(frame).to_bytes(2, "little")
 
             packet_body = magic + version + bus_byte + length + frame
-            crc = VelolinkHub._crc16_value(packet_body)
+            crc = VelolinkHub._crc16_value(packet_body)  # Use static method
             packet = packet_body + crc.to_bytes(2, "little")
 
             self._writer.write(packet)
@@ -417,7 +426,7 @@ class DemoTransport:
         self._frame_cb = frame_cb
         self._running = False
         self._simulator_task: asyncio.Task | None = None
-        self._cfg = cfg
+        self._cfg = cfg  # FIX: Przechowujemy cfg
 
     async def async_start(self) -> None:
         """Start demo simulation."""
@@ -587,12 +596,26 @@ class VelolinkHub:
         self._running = False
 
     async def async_start(self, scan_on_startup: bool = True) -> None:
+<<<<<<< HEAD
+        """Start hub."""
+=======
         """Start hub with improved error handling."""
         _LOGGER.info("Starting VelolinkHub with %d buses", len(self._buses_cfg))
 
         startup_errors = []
 
+>>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
         for bus_id, cfg in self._buses_cfg.items():
+<<<<<<< HEAD
+            if cfg.transport == "serial":
+                transport = SerialTransport(self._hass, bus_id, cfg, self._on_frame)
+            elif cfg.transport == "tcp":
+                transport = TcpTransport(self._hass, bus_id, cfg, self._on_frame)
+            elif cfg.transport == "demo":
+                transport = DemoTransport(self._hass, bus_id, cfg, self._on_frame)
+            else:
+                raise ValueError(f"Unknown transport: {cfg.transport}")
+=======
             try:
                 _LOGGER.debug("Initializing transport for bus %s", bus_id)
 
@@ -604,7 +627,12 @@ class VelolinkHub:
                     transport = DemoTransport(self._hass, bus_id, cfg, self._on_frame)
                 else:
                     raise ValueError(f"Unknown transport: {cfg.transport}")
+>>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
 
+<<<<<<< HEAD
+            await transport.async_start()
+            self._transports[bus_id] = transport
+=======
                 await transport.async_start()
                 self._transports[bus_id] = transport
                 _LOGGER.info("Transport for bus %s started successfully", bus_id)
@@ -615,24 +643,15 @@ class VelolinkHub:
                 )
                 startup_errors.append(f"{bus_id}: {ex}")
                 # Nie dodawaj transportu do słownika przy błędzie
-
-        if startup_errors:
-            _LOGGER.error("Hub startup errors: %s", startup_errors)
-            # Opcjonalnie: można tutaj zdecydować czy przerwać czy kontynuować
-            # Dla robustness lepiej kontynuować z działającymi busami
+>>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
 
         self._running = True
 
-        if scan_on_startup and self._transports:
-            _LOGGER.info("Starting discovery on startup")
+        if scan_on_startup:
             await self.async_discovery_all()
-        elif not self._transports:
-            _LOGGER.error("No transports started successfully")
-            raise RuntimeError("Failed to start any transport")
 
     async def async_stop(self) -> None:
         """Stop hub."""
-        _LOGGER.info("Stopping VelolinkHub")
         self._running = False
         await asyncio.gather(
             *(t.async_stop() for t in self._transports.values()), return_exceptions=True
@@ -642,11 +661,14 @@ class VelolinkHub:
     async def async_discovery_bus(self, bus_id: BusId) -> None:
         """Discover devices on bus."""
         _LOGGER.info("Discovery on %s", bus_id)
+<<<<<<< HEAD
+=======
 
         if bus_id not in self._transports:
             _LOGGER.warning("Bus %s not available for discovery", bus_id)
             return
 
+>>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
         frame = VelolinkHub._build_frame(
             addr=0x00, func=FunctionCode.DISCOVER, payload=b""
         )
