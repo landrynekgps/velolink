@@ -11,8 +11,9 @@
       },
       "serial_hat": {
         "title": "Konfiguracja Raspberry Pi HAT",
-        "description": "Porty RS485 dla Velolink HAT zostaną wykryte automatycznie. Ustaw tylko podstawowe parametry.",
+        "description": "Porty RS485 dla Velolink HAT. Wykryte porty: {ports_found}",
         "data": {
+          "port1": "Port RS485 #1",
           "baudrate": "Szybkość transmisji",
           "rts_toggle": "Przełączanie RTS (zwykle niepotrzebne dla HAT)",
           "scan_on_startup": "Skanuj urządzenia przy starcie"
@@ -48,7 +49,8 @@
       "already_configured": "To urządzenie jest już skonfigurowane.",
       "no_channels": "Brak dostępnych kanałów do konfiguracji.",
       "no_devices": "Nie wykryto żadnych urządzeń.",
-      "no_hat_ports_found": "Nie znaleziono portów charakterystycznych dla Raspberry Pi HAT. Sprawdź czy HAT jest prawidłowo podłączony i aktywny w config.txt.",
+      "no_hat_ports_found": "Nie znaleziono portów charakterystycznych dla Raspberry Pi HAT.",
+      "hat_not_detected": "UART na Raspberry Pi nie jest aktywny. Sprawdź /boot/config.txt",
       "no_usb_ports_found": "Nie znaleziono żadnych portów USB. Upewnij się, że adapter jest podłączony i masz uprawnienia.",
       "integration_not_setup": "Integracja nie jest poprawnie skonfigurowana. Spróbuj ponownie dodać ją w Integracjach."
     }

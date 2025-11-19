@@ -31,7 +31,6 @@ from .const import (
     DEVICE_CLASS_OUTPUT_MAP,
     POLARITY_NO,
     POLARITY_NC,
-    # Stałe do OptionsFlow
     NODE_KIND_INPUT,
     NODE_KIND_OUTPUT,
     NODE_KIND_VELOSWITCH,
@@ -59,34 +58,43 @@ CONN_CHOICE_DEMO = "demo"
 
 
 def _list_serial_ports() -> dict[str, str]:
-    """List and categorize available serial ports."""
+    """List and categorize available serial ports with enhanced RPi support."""
     ports = {}
-    try:
-        from serial.tools import list_ports
-
-        _LOGGER.debug("Scanning for serial ports...")
-        for port in list_ports.comports():
-            device_path = port.device
-            description = f"{port.description} ({device_path})"
-
-            # SZEROKIE wykrywanie RPi HAT
-            if any(x in device_path for x in ["ttyAMA", "serial", "ttySC", "ttyS0"]):
-                ports[device_path] = f"Raspberry Pi HAT ({device_path})"
-                _LOGGER.info("Detected RPi HAT port: %s", device_path)
-            elif "USB" in device_path or "ttyUSB" in device_path:
-                ports[device_path] = description
-                _LOGGER.info("Detected USB port: %s", device_path)
-    except Exception as ex:
-        _LOGGER.warning("Failed to list serial ports with pyserial: %s", ex)
-
+    
     # ZAWSZE dodaj standardowe porty RPi jako fallback
     default_ports = {
-        "/dev/ttyAMA0": "RPi HAT (/dev/ttyAMA0) - Standardowy UART",
+        "/dev/ttyAMA0": "Raspberry Pi HAT (/dev/ttyAMA0) - Standardowy UART",
+        "/dev/serial0": "Raspberry Pi UART (/dev/serial0) - Aktywny UART (zalecany)",
         "/dev/ttySC0": "RPi HAT (/dev/ttySC0) - SC16IS752",
         "/dev/ttyS0": "RPi HAT (/dev/ttyS0) - Mini UART",
         "/dev/ttyUSB0": "USB Adapter (/dev/ttyUSB0) - Adapter USB-RS485",
+        "/dev/ttyACM0": "USB Adapter (/dev/ttyACM0) - Adapter USB-RS485",
     }
 
+    # Spróbuj wykryć porty przez pyserial
+    try:
+        from serial.tools import list_ports
+        
+        _LOGGER.debug("Scanning for serial ports with pyserial...")
+        for port in list_ports.comports():
+            device_path = port.device
+            description = f"{port.description} ({device_path})"
+            ports[device_path] = description
+            
+            # Wykryj RPi HAT na podstawie charakterystycznych ścieżek
+            if "ttyAMA" in device_path or "ttySC" in device_path or "ttyS0" in device_path:
+                _LOGGER.info("Detected RPi HAT port via pyserial: %s", device_path)
+            elif "USB" in device_path or "ttyUSB" in device_path or "ttyACM" in device_path:
+                _LOGGER.info("Detected USB port: %s", device_path)
+                
+    except ImportError:
+        _LOGGER.error(
+            "pyserial not installed! Install with: pip install pyserial"
+        )
+    except Exception as ex:
+        _LOGGER.warning("Failed to list serial ports with pyserial: %s", ex)
+
+    # Dodaj fallback ports, jeśli nie zostały wykryte przez pyserial
     for port, desc in default_ports.items():
         if port not in ports:
             ports[port] = desc
@@ -120,7 +128,7 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._connection_type == CONN_CHOICE_DEMO:
                 return await self.async_step_demo()
 
-        # FIX: ZAWSZE pokazuj wszystkie opcje
+        # ZAWSZE pokazuj wszystkie opcje
         options = {
             CONN_CHOICE_RPI_HAT: "Raspberry Pi HAT (ttyAMA0)",
             CONN_CHOICE_USB: "Adapter USB-RS485",
@@ -149,7 +157,9 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         user_input[CONF_CONNECTION_TYPE] = CONN_TYPE_SERIAL
-        uid = f"serial-{port1}-{port2 or ''}"
+        # Poprawione generowanie unique_id
+        uid_suffix = f"-{port2}" if port2 else ""
+        uid = f"serial-{port1}{uid_suffix}"
         await self.async_set_unique_id(uid)
         self._abort_if_unique_id_configured()
 
@@ -160,21 +170,44 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle RPi HAT serial connection setup."""
         all_ports = await self.hass.async_add_executor_job(_list_serial_ports)
+        
+        # Filtruj porty charakterystyczne dla HAT
         hat_ports = {
-            p: d for p, d in all_ports.items() if "ttyAMA" in p or "serial" in p
+            p: d for p, d in all_ports.items() 
+            if "ttyAMA" in p or "ttySC" in p or "ttyS0" in p or "serial0" in p
         }
 
         if not hat_ports:
-            return self.async_abort(reason="no_hat_ports_found")
+            # Jeśli nie znaleziono, pokaż wszystkie porty i ostrzeżenie
+            _LOGGER.warning("No HAT-specific ports found, showing all available")
+            return self.async_show_form(
+                step_id="serial_hat",
+                data_schema=vol.Schema({}),
+                errors={"base": "hat_not_detected"},
+                description_placeholders={
+                    "diagnostic": (
+                        "Nie wykryto portów charakterystycznych dla Raspberry Pi HAT.\n\n"
+                        "Aby aktywować UART:\n"
+                        "1. Edytuj /boot/config.txt:\n"
+                        "   enable_uart=1\n"
+                        "   dtoverlay=disable-bt  # dla RPi 3/4\n"
+                        "2. Reboot Raspberry Pi\n"
+                        "3. Sprawdź: ls -la /dev/ttyAMA* /dev/serial*"
+                    )
+                },
+            )
 
         if user_input is not None:
+            # Użyj pierwszego dostępnego portu HAT
             selected_port = next(iter(hat_ports.keys()))
             _LOGGER.info("Using HAT port: %s", selected_port)
             user_input[CONF_PORT1] = selected_port
             return await self._create_serial_entry(user_input, "Velolink RPi HAT")
 
+        # Pokaż listę wykrytych portów
         schema = vol.Schema(
             {
+                vol.Required(CONF_PORT1): vol.In(hat_ports),
                 vol.Required(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): cv.positive_int,
                 vol.Required(CONF_RTS_TOGGLE, default=DEFAULT_RTS_TOGGLE): bool,
                 vol.Required(
@@ -183,7 +216,13 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-        return self.async_show_form(step_id="serial_hat", data_schema=schema)
+        return self.async_show_form(
+            step_id="serial_hat", 
+            data_schema=schema,
+            description_placeholders={
+                "ports_found": "\n".join([f"- {p}: {d}" for p, d in hat_ports.items()])
+            }
+        )
 
     async def async_step_serial_usb(
         self, user_input: Optional[Dict[str, Any]] = None
