@@ -1,7 +1,7 @@
 {
   "domain": "velolink",
   "name": "Velolink",
-  "version": "0.0.1b",
+  "version": "0.0.1",
   "icon": "https://raw.githubusercontent.com/landrynekgps/velolink-ha/main/custom_components/velolink/icon.png",
   "documentation": "https://github.com/landrynekgps/velolink-ha",
   "issue_tracker": "https://github.com/landrynekgps/velolink-ha/issues",
