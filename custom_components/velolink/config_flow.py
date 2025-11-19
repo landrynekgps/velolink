@@ -60,7 +60,7 @@ CONN_CHOICE_DEMO = "demo"
 def _list_serial_ports() -> dict[str, str]:
     """List and categorize available serial ports with enhanced RPi support."""
     ports = {}
-    
+
     # ZAWSZE dodaj standardowe porty RPi jako fallback
     default_ports = {
         "/dev/ttyAMA0": "Raspberry Pi HAT (/dev/ttyAMA0) - Standardowy UART",
@@ -74,23 +74,29 @@ def _list_serial_ports() -> dict[str, str]:
     # Spróbuj wykryć porty przez pyserial
     try:
         from serial.tools import list_ports
-        
+
         _LOGGER.debug("Scanning for serial ports with pyserial...")
         for port in list_ports.comports():
             device_path = port.device
             description = f"{port.description} ({device_path})"
             ports[device_path] = description
-            
+
             # Wykryj RPi HAT na podstawie charakterystycznych ścieżek
-            if "ttyAMA" in device_path or "ttySC" in device_path or "ttyS0" in device_path:
+            if (
+                "ttyAMA" in device_path
+                or "ttySC" in device_path
+                or "ttyS0" in device_path
+            ):
                 _LOGGER.info("Detected RPi HAT port via pyserial: %s", device_path)
-            elif "USB" in device_path or "ttyUSB" in device_path or "ttyACM" in device_path:
+            elif (
+                "USB" in device_path
+                or "ttyUSB" in device_path
+                or "ttyACM" in device_path
+            ):
                 _LOGGER.info("Detected USB port: %s", device_path)
-                
+
     except ImportError:
-        _LOGGER.error(
-            "pyserial not installed! Install with: pip install pyserial"
-        )
+        _LOGGER.error("pyserial not installed! Install with: pip install pyserial")
     except Exception as ex:
         _LOGGER.warning("Failed to list serial ports with pyserial: %s", ex)
 
@@ -170,10 +176,11 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle RPi HAT serial connection setup."""
         all_ports = await self.hass.async_add_executor_job(_list_serial_ports)
-        
+
         # Filtruj porty charakterystyczne dla HAT
         hat_ports = {
-            p: d for p, d in all_ports.items() 
+            p: d
+            for p, d in all_ports.items()
             if "ttyAMA" in p or "ttySC" in p or "ttyS0" in p or "serial0" in p
         }
 
@@ -217,11 +224,11 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         return self.async_show_form(
-            step_id="serial_hat", 
+            step_id="serial_hat",
             data_schema=schema,
             description_placeholders={
                 "ports_found": "\n".join([f"- {p}: {d}" for p, d in hat_ports.items()])
-            }
+            },
         )
 
     async def async_step_serial_usb(

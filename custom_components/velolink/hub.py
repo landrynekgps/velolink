@@ -153,14 +153,14 @@ class SerialTransport:
                 stopbits=serial.STOPBITS_ONE,
                 rs485_mode=rs485_settings,
             )
-            
+
             self._serial_transport, self._serial_protocol = await asyncio.wait_for(
                 connect_coro,
                 timeout=self._connect_timeout,
             )
-            
+
             _LOGGER.info("Serial %s connected successfully", self._bus_id)
-            
+
         except asyncio.TimeoutError:
             _LOGGER.error(
                 "Timeout connecting to serial port %s. Check if port exists and is accessible.",
@@ -589,13 +589,13 @@ class VelolinkHub:
     async def async_start(self, scan_on_startup: bool = True) -> None:
         """Start hub with improved error handling."""
         _LOGGER.info("Starting VelolinkHub with %d buses", len(self._buses_cfg))
-        
+
         startup_errors = []
-        
+
         for bus_id, cfg in self._buses_cfg.items():
             try:
                 _LOGGER.debug("Initializing transport for bus %s", bus_id)
-                
+
                 if cfg.transport == "serial":
                     transport = SerialTransport(self._hass, bus_id, cfg, self._on_frame)
                 elif cfg.transport == "tcp":
@@ -608,9 +608,11 @@ class VelolinkHub:
                 await transport.async_start()
                 self._transports[bus_id] = transport
                 _LOGGER.info("Transport for bus %s started successfully", bus_id)
-                
+
             except Exception as ex:
-                _LOGGER.exception("Failed to start transport for bus %s: %s", bus_id, ex)
+                _LOGGER.exception(
+                    "Failed to start transport for bus %s: %s", bus_id, ex
+                )
                 startup_errors.append(f"{bus_id}: {ex}")
                 # Nie dodawaj transportu do słownika przy błędzie
 
@@ -640,11 +642,11 @@ class VelolinkHub:
     async def async_discovery_bus(self, bus_id: BusId) -> None:
         """Discover devices on bus."""
         _LOGGER.info("Discovery on %s", bus_id)
-        
+
         if bus_id not in self._transports:
             _LOGGER.warning("Bus %s not available for discovery", bus_id)
             return
-            
+
         frame = VelolinkHub._build_frame(
             addr=0x00, func=FunctionCode.DISCOVER, payload=b""
         )
