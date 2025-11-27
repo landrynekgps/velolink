@@ -116,7 +116,7 @@ class SerialTransport:
                 )
                 await asyncio.sleep(GATEWAY_RECONNECT_DELAY_S)
 
-    async def _connect(self) -> None:
+     async def _connect(self) -> None:
         """Connect to serial port."""
         # pylint: disable=import-outside-toplevel,import-error
         import serial
@@ -129,8 +129,16 @@ class SerialTransport:
             self._cfg.baudrate,
         )
 
-        # FIX: Removed os.path.exists check which fails on Windows COM ports
-        # The serial library will raise an exception if the port is invalid
+        # FIX: Sprawdź, czy port istnieje i jest dostępny
+        if not os.path.exists(self._cfg.port):
+            raise RuntimeError(f"Serial port {self._cfg.port} does not exist")
+        
+        # FIX: Sprawdź uprawnienia do portu
+        if not os.access(self._cfg.port, os.R_OK | os.W_OK):
+            _LOGGER.warning(
+                "Permission denied for serial port %s. User may need to be added to dialout group.",
+                self._cfg.port
+            )
 
         loop = asyncio.get_running_loop()
         rs485_settings = None
@@ -143,19 +151,25 @@ class SerialTransport:
             except Exception:  # pylint: disable=broad-exception-caught
                 _LOGGER.warning("RS485Settings not supported")
 
+        # FIX: Przygotuj słownik argumentów i dodaj rs485_mode tylko, gdy jest potrzebny
+        connection_args = {
+            "url": self._cfg.port,
+            "baudrate": self._cfg.baudrate,
+            "bytesize": serial.EIGHTBITS,
+            "parity": serial.PARITY_NONE,
+            "stopbits": serial.STOPBITS_ONE,
+            "timeout": 1,
+        }
+
+        if rs485_settings is not None:
+            connection_args["rs485_mode"] = rs485_settings
+
         try:
             self._serial_transport, self._serial_protocol = (
                 await serial_asyncio.create_serial_connection(
                     loop,
                     lambda: _SerialProtocol(self._hass, self._frame_cb, self._bus_id),
-                    url=self._cfg.port,
-                    baudrate=self._cfg.baudrate,
-                    bytesize=serial.EIGHTBITS,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE,
-                    rs485_mode=rs485_settings,
-                    # FIX: Dodajemy timeout dla lepszej obsługi błędów
-                    timeout=1,
+                    **connection_args,  # Użyj słownika argumentów
                 )
             )
         except serial.SerialException as e:
