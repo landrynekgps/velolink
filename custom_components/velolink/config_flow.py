@@ -62,34 +62,13 @@ CONN_CHOICE_DEMO = "demo"
 def _list_serial_ports() -> dict[str, str]:
     """List and categorize available serial ports."""
     ports = {}
-<<<<<<< HEAD
-=======
-
-    # ZAWSZE dodaj standardowe porty RPi jako fallback
-    default_ports = {
-        "/dev/ttyAMA0": "Raspberry Pi HAT (/dev/ttyAMA0) - Standardowy UART",
-        "/dev/serial0": "Raspberry Pi UART (/dev/serial0) - Aktywny UART (zalecany)",
-        "/dev/ttySC0": "RPi HAT (/dev/ttySC0) - SC16IS752",
-        "/dev/ttyS0": "RPi HAT (/dev/ttyS0) - Mini UART",
-        "/dev/ttyUSB0": "USB Adapter (/dev/ttyUSB0) - Adapter USB-RS485",
-        "/dev/ttyACM0": "USB Adapter (/dev/ttyACM0) - Adapter USB-RS485",
-    }
-
-    # Spróbuj wykryć porty przez pyserial
->>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
     try:
         from serial.tools import list_ports
-<<<<<<< HEAD
 
         _LOGGER.debug("Scanning for serial ports...")
-=======
-
-        _LOGGER.debug("Scanning for serial ports with pyserial...")
->>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
         for port in list_ports.comports():
             device_path = port.device
             description = f"{port.description} ({device_path})"
-<<<<<<< HEAD
 
             # SZEROKIE wykrywanie RPi HAT - rozszerzone o więcej ścieżek
             if any(x in device_path for x in [
@@ -102,29 +81,7 @@ def _list_serial_ports() -> dict[str, str]:
                 _LOGGER.info("Detected RPi HAT port: %s", device_path)
             elif "USB" in device_path or "ttyUSB" in device_path or "ttyACM" in device_path:
                 ports[device_path] = description
-=======
-            ports[device_path] = description
-
-            # Wykryj RPi HAT na podstawie charakterystycznych ścieżek
-            if (
-                "ttyAMA" in device_path
-                or "ttySC" in device_path
-                or "ttyS0" in device_path
-            ):
-                _LOGGER.info("Detected RPi HAT port via pyserial: %s", device_path)
-            elif (
-                "USB" in device_path
-                or "ttyUSB" in device_path
-                or "ttyACM" in device_path
-            ):
->>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
                 _LOGGER.info("Detected USB port: %s", device_path)
-<<<<<<< HEAD
-=======
-
-    except ImportError:
-        _LOGGER.error("pyserial not installed! Install with: pip install pyserial")
->>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
     except Exception as ex:
         _LOGGER.warning("Failed to list serial ports with pyserial: %s", ex)
 
@@ -144,7 +101,11 @@ def _list_serial_ports() -> dict[str, str]:
     }
 
     for port, desc in default_ports.items():
-        if port not in ports and os.path.exists(port):
+        if os.name == "nt":
+             if port not in ports:
+                ports[port] = desc
+                _LOGGER.debug("Added fallback port (Windows): %s", port)
+        elif port not in ports and os.path.exists(port):
             ports[port] = desc
             _LOGGER.debug("Added fallback port: %s", port)
         elif port not in ports:
@@ -162,6 +123,8 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize config flow."""
         self._connection_type: str | None = None
+        self._hat_ports: dict[str, str] | None = None
+        self._usb_ports: dict[str, str] | None = None
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -178,7 +141,6 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._connection_type == CONN_CHOICE_DEMO:
                 return await self.async_step_demo()
 
-        # FIX: ZAWSZE pokazuj wszystkie opcje
         options = {
             CONN_CHOICE_RPI_HAT: "Raspberry Pi HAT (ttyAMA0)",
             CONN_CHOICE_USB: "Adapter USB-RS485",
@@ -190,7 +152,7 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=schema)
 
     async def _create_serial_entry(
-        self, user_input: dict[str, Any], title: str
+        self, user_input: dict[str, Any], title: str, step_id: str
     ) -> FlowResult:
         """Helper to create a serial connection entry."""
         if user_input.get(CONF_PORT2) == "":
@@ -201,8 +163,8 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if port2 and port1 == port2:
             return self.async_show_form(
-                step_id="serial_usb",
-                data_schema=self.data_schema,
+                step_id=step_id,
+                data_schema=vol.Schema(self._get_serial_schema(step_id, user_input)),
                 errors={"base": "ports_identical"},
             )
 
@@ -213,92 +175,68 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_create_entry(title=title, data=user_input)
 
+    def _get_serial_schema(self, step_id: str, user_input: dict[str, Any]) -> dict:
+        """Get the correct schema for the current step."""
+        base_schema = {
+            vol.Required(CONF_BAUDRATE, default=user_input.get(CONF_BAUDRATE, DEFAULT_BAUDRATE)): cv.positive_int,
+            vol.Required(CONF_RTS_TOGGLE, default=user_input.get(CONF_RTS_TOGGLE, DEFAULT_RTS_TOGGLE)): bool,
+            vol.Required(CONF_SCAN_ON_STARTUP, default=user_input.get(CONF_SCAN_ON_STARTUP, DEFAULT_SCAN_ON_STARTUP)): bool,
+        }
+
+        if step_id == "serial_hat":
+            if self._hat_ports and len(self._hat_ports) > 1:
+                base_schema[vol.Required(CONF_PORT1)] = vol.In(self._hat_ports)
+        elif step_id == "serial_usb":
+            base_schema[vol.Required(CONF_PORT1)] = vol.In(self._usb_ports)
+            base_schema[vol.Optional(CONF_PORT2)] = vol.In({"": "(brak)"} | self._usb_ports)
+        
+        return base_schema
+
     async def async_step_serial_hat(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Handle RPi HAT serial connection setup."""
         all_ports = await self.hass.async_add_executor_job(_list_serial_ports)
-<<<<<<< HEAD
-=======
-
-        # Filtruj porty charakterystyczne dla HAT
->>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
-        hat_ports = {
-<<<<<<< HEAD
+        self._hat_ports = {
             p: d for p, d in all_ports.items() if any(x in p for x in ["ttyAMA", "serial", "ttySC", "ttyS", "serial0", "serial1"])
-=======
-            p: d
-            for p, d in all_ports.items()
-            if "ttyAMA" in p or "ttySC" in p or "ttyS0" in p or "serial0" in p
->>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
         }
 
-        if not hat_ports:
+        if not self._hat_ports:
             _LOGGER.warning("No HAT ports found. Available ports: %s", list(all_ports.keys()))
             return self.async_abort(reason="no_hat_ports_found")
 
         if user_input is not None:
-            selected_port = user_input.get(CONF_PORT1, next(iter(hat_ports.keys())))
-            _LOGGER.info("Using HAT port: %s", selected_port)
-            user_input[CONF_PORT1] = selected_port
-            return await self._create_serial_entry(user_input, "Velolink RPi HAT")
+            # Jeśli port nie był wybrany, użyj pierwszego dostępnego
+            if CONF_PORT1 not in user_input:
+                user_input[CONF_PORT1] = next(iter(self._hat_ports.keys()))
+            
+            return await self._create_serial_entry(user_input, "Velolink RPi HAT", "serial_hat")
 
-        # Jeśli jest więcej niż jeden port HAT, pozwól użytkownikowi wybrać
-        if len(hat_ports) > 1:
-            schema = vol.Schema({
-                vol.Required(CONF_PORT1): vol.In(hat_ports),
-                vol.Required(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): cv.positive_int,
-                vol.Required(CONF_RTS_TOGGLE, default=DEFAULT_RTS_TOGGLE): bool,
-                vol.Required(CONF_SCAN_ON_STARTUP, default=DEFAULT_SCAN_ON_STARTUP): bool,
-            })
-        else: # Jeśli jest tylko jeden port HAT, użyj go automatycznie
-            schema = vol.Schema({
-                vol.Required(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): cv.positive_int,
-                vol.Required(CONF_RTS_TOGGLE, default=DEFAULT_RTS_TOGGLE): bool,
-                vol.Required(CONF_SCAN_ON_STARTUP, default=DEFAULT_SCAN_ON_STARTUP): bool,
-            })
+        # Pokaż formularz. Jeśli jest tylko jeden port, ukryj wybór.
+        schema_dict = self._get_serial_schema("serial_hat", {})
+        if len(self._hat_ports) == 1:
+            # Nie pokazuj pola wyboru, jeśli jest tylko jedna opcja
+            schema_dict.pop(vol.Required(CONF_PORT1), None)
 
-<<<<<<< HEAD
+        schema = vol.Schema(schema_dict)
         return self.async_show_form(step_id="serial_hat", data_schema=schema)
-=======
-        return self.async_show_form(
-            step_id="serial_hat",
-            data_schema=schema,
-            description_placeholders={
-                "ports_found": "\n".join([f"- {p}: {d}" for p, d in hat_ports.items()])
-            },
-        )
->>>>>>> 3e83766a22de6be8a324b544ab2dc2a34029dc99
 
     async def async_step_serial_usb(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Handle USB adapter serial connection setup."""
         all_ports = await self.hass.async_add_executor_job(_list_serial_ports)
-        usb_ports = {
+        self._usb_ports = {
             p: d for p, d in all_ports.items() if "ttyUSB" in p or "ttyACM" in p
         }
 
-        if not usb_ports:
+        if not self._usb_ports:
             return self.async_abort(reason="no_usb_ports_found")
 
         if user_input is not None:
-            return await self._create_serial_entry(
-                user_input, f"Velolink USB ({user_input[CONF_PORT1]})"
-            )
+            return await self._create_serial_entry(user_input, f"Velolink USB ({user_input[CONF_PORT1]})", "serial_usb")
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_PORT1): vol.In(usb_ports),
-                vol.Optional(CONF_PORT2): vol.In({"": "(brak)"} | usb_ports),
-                vol.Required(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): cv.positive_int,
-                vol.Required(CONF_RTS_TOGGLE, default=DEFAULT_RTS_TOGGLE): bool,
-                vol.Required(
-                    CONF_SCAN_ON_STARTUP, default=DEFAULT_SCAN_ON_STARTUP
-                ): bool,
-            }
-        )
-
+        schema = vol.Schema(self._get_serial_schema("serial_usb", {}))
         return self.async_show_form(step_id="serial_usb", data_schema=schema)
 
     async def async_step_tcp(
