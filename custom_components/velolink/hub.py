@@ -116,7 +116,7 @@ class SerialTransport:
                 )
                 await asyncio.sleep(GATEWAY_RECONNECT_DELAY_S)
 
-     async def _connect(self) -> None:
+    async def _connect(self) -> None:
         """Connect to serial port."""
         # pylint: disable=import-outside-toplevel,import-error
         import serial
@@ -806,28 +806,39 @@ class VelolinkHub:
             self._emit(
                 self._subs_button,
                 (bus_id, parsed["addr"], parsed["ch"]),
-                bool(parsed["value"]),
+                bool(parsed["pressed"]),
             )
         elif parsed["type"] == "ENCODER_EVENT":
             self._emit(
                 self._subs_encoder,
                 (bus_id, parsed["addr"], parsed["ch"]),
-                int(parsed["value"]),
+                int(parsed["delta"]),
             )
 
-    def _emit(self, subs, key, value):
-        """Emit event to subscribers."""
-        if key in subs:
-            for cb in subs[key]:
-                self._hass.loop.call_soon_threadsafe(cb, value)
+    def _emit(self, bucket: Dict[Tuple, List[Callable]], key: Tuple, value) -> None:
+        """Emit to subscribers."""
+        for callback_func in bucket.get(key, []):
+            try:
+                callback_func(value)
+            except Exception:  # pylint: disable=broad-exception-caught
+                _LOGGER.exception("Callback error for %s", key)
 
     def _register_node(self, node: VelolinkNode) -> None:
-        """Register new node."""
+        """Register discovered node."""
         key = (node.bus_id, node.address)
-        if key not in self._nodes:
+        if key in self._nodes:
             self._nodes[key] = node
-            _LOGGER.info("New node discovered: %s", node)
-            async_dispatcher_send(self._hass, signal_new_node(self._entry_id), node)
+            _LOGGER.debug("Updated node: %s", node)
+            return
+
+        self._nodes[key] = node
+        _LOGGER.info(
+            "New node: %s @ %s:%d. Sending signal.",
+            node.kind,
+            node.bus_id,
+            node.address,
+        )
+        async_dispatcher_send(self._hass, signal_new_node(self._entry_id), node)
 
     def get_node(self, bus_id: BusId, addr: Addr) -> VelolinkNode | None:
         """Get node by address."""
@@ -836,74 +847,12 @@ class VelolinkHub:
     @staticmethod
     def _build_frame(addr: int, func: int, payload: bytes) -> bytes:
         """Build RS485 frame."""
-        # Frame: [PRE(2)|ADDR(1)|FUNC(1)|RES(1)|LEN(1)|PAYLOAD(N)|CRC(2)]
         pre = bytes([0xAA, 0x55])
-        header = bytes([addr, func, 0x00, len(payload)])
-        body = header + payload
+        seq = 0
+        length = len(payload)
+        body = bytes([addr & 0xFF, func & 0xFF, seq & 0xFF, length & 0xFF]) + payload
         crc = VelolinkHub._crc16_value(body)
         return pre + body + crc.to_bytes(2, "little")
-
-    @staticmethod
-    def _parse_frame(frame: bytes) -> dict:
-        """Parse RS485 frame."""
-        # Simple parser for demo
-        addr = frame[2]
-        func = frame[3]
-        length = frame[5]
-        payload = frame[6 : 6 + length]
-
-        if func == FunctionCode.HELLO:
-            # Payload: [KIND(1)|CH(1)|CAP(2)|SW(2)|HW(2)|LEN_M(1)|MODEL(N)...]
-            kind_map = {
-                0x00: "input",
-                0x01: "output",
-                0x02: "pwm",
-                0x03: "analog",
-                0x0A: "veloswitch",
-            }
-            kind_code = payload[0]
-            channels = payload[1]
-            model_len = payload[8]
-            model = payload[9 : 9 + model_len].decode("ascii", errors="ignore")
-
-            return {
-                "type": "HELLO",
-                "addr": addr,
-                "kind": kind_map.get(kind_code, "unknown"),
-                "channels": channels,
-                "model": model,
-            }
-        elif func == FunctionCode.INPUT_CHANGE:
-            return {
-                "type": "INPUT_CHANGE",
-                "addr": addr,
-                "ch": payload[0],
-                "value": payload[1],
-            }
-        elif func == FunctionCode.OUTPUT_STATE:
-            return {
-                "type": "OUTPUT_STATE",
-                "addr": addr,
-                "ch": payload[0],
-                "value": payload[1],
-            }
-        elif func == FunctionCode.PWM_STATE:
-            return {
-                "type": "PWM_STATE",
-                "addr": addr,
-                "ch": payload[0],
-                "value": payload[1],
-            }
-        elif func == FunctionCode.ANALOG_SAMPLE:
-            val = payload[1] | (payload[2] << 8)
-            return {
-                "type": "ANALOG_SAMPLE",
-                "addr": addr,
-                "ch": payload[0],
-                "value": val / 1000.0,
-            }
-
-        return {"type": "UNKNOWN"}
 
     @staticmethod
     def _crc16_value(data: bytes) -> int:
@@ -912,8 +861,141 @@ class VelolinkHub:
         for byte in data:
             crc ^= byte
             for _ in range(8):
-                if crc & 0x0001:
-                    crc = (crc >> 1) ^ 0xA001
-                else:
-                    crc >>= 1
+                crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
         return crc
+
+    def _parse_frame(self, frame: bytes) -> dict:
+        """Parse RS485 frame."""
+        if len(frame) < 8 or frame[0] != 0xAA or frame[1] != 0x55:
+            raise ValueError("bad preamble")
+
+        length = frame[5]
+        expected = 6 + length + 2
+        if len(frame) != expected:
+            raise ValueError("length mismatch")
+
+        body = frame[2:-2]
+        crc_recv = frame[-2] | (frame[-1] << 8)
+        crc_calc = VelolinkHub._crc16_value(body)
+        if crc_recv != crc_calc:
+            raise ValueError("CRC error")
+
+        addr = frame[2]
+        func = frame[3]
+        payload = frame[6 : 6 + length]
+
+        # HELLO Extended
+        if func == FunctionCode.HELLO:
+            if len(payload) < 8:
+                raise ValueError("HELLO too short")
+
+            kind_code = payload[0]
+            kind_map = {
+                0x00: "input",
+                0x01: "output",
+                0x02: "pwm",
+                0x03: "analog",
+                0x0A: "veloswitch",
+                0x0B: "velodimmer",
+                0x0C: "velomotion",
+                0x0D: "velosensor",
+            }
+            kind = kind_map.get(kind_code, "unknown")
+            channels = payload[1]
+            capabilities = payload[2]
+            hw_ver = f"{payload[3]}.{payload[4]}"
+            sw_ver = f"{payload[5]}.{payload[6]}.{payload[7]}"
+
+            offset = 8
+            model, serial, area = None, None, None
+
+            if offset < len(payload):
+                model_len = payload[offset]
+                offset += 1
+                if offset + model_len <= len(payload):
+                    model = payload[offset : offset + model_len].decode(
+                        "ascii", errors="ignore"
+                    )
+                    offset += model_len
+
+            if offset < len(payload):
+                serial_len = payload[offset]
+                offset += 1
+                if offset + serial_len <= len(payload):
+                    serial = payload[offset : offset + serial_len].decode(
+                        "ascii", errors="ignore"
+                    )
+                    offset += serial_len
+
+            if offset < len(payload):
+                area_len = payload[offset]
+                offset += 1
+                if offset + area_len <= len(payload):
+                    area = payload[offset : offset + area_len].decode(
+                        "utf-8", errors="ignore"
+                    )
+
+            return {
+                "type": "HELLO",
+                "addr": addr,
+                "kind": kind,
+                "channels": channels,
+                "capabilities": capabilities,
+                "hw_version": hw_ver,
+                "sw_version": sw_ver,
+                "model": model,
+                "serial_number": serial,
+                "area": area,
+            }
+
+        if func == FunctionCode.INPUT_CHANGE:
+            return {
+                "type": "INPUT_CHANGE",
+                "addr": addr,
+                "ch": payload[0],
+                "value": payload[1],
+            }
+
+        if func == FunctionCode.OUTPUT_STATE:
+            return {
+                "type": "OUTPUT_STATE",
+                "addr": addr,
+                "ch": payload[0],
+                "value": payload[1],
+            }
+
+        if func == FunctionCode.PWM_STATE:
+            return {
+                "type": "PWM_STATE",
+                "addr": addr,
+                "ch": payload[0],
+                "value": payload[1],
+            }
+
+        if func == FunctionCode.ANALOG_SAMPLE:
+            val = payload[1] | (payload[2] << 8) if len(payload) >= 3 else 0
+            return {
+                "type": "ANALOG_SAMPLE",
+                "addr": addr,
+                "ch": payload[0],
+                "value": val / 1000.0,
+            }
+
+        if func == FunctionCode.BUTTON_EVENT:
+            return {
+                "type": "BUTTON_EVENT",
+                "addr": addr,
+                "ch": payload[0],
+                "pressed": bool(payload[1]),
+            }
+
+        if func == FunctionCode.ENCODER_EVENT:
+            delta = int.from_bytes([payload[1]], "little", signed=True)
+            return {
+                "type": "ENCODER_EVENT",
+                "addr": addr,
+                "ch": payload[0],
+                "delta": delta,
+            }
+
+        raise ValueError(f"unknown func: {func:02X}")
