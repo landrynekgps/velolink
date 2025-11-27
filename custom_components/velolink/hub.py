@@ -132,12 +132,12 @@ class SerialTransport:
         # FIX: Sprawdź, czy port istnieje i jest dostępny
         if not os.path.exists(self._cfg.port):
             raise RuntimeError(f"Serial port {self._cfg.port} does not exist")
-        
+
         # FIX: Sprawdź uprawnienia do portu
         if not os.access(self._cfg.port, os.R_OK | os.W_OK):
             _LOGGER.warning(
                 "Permission denied for serial port %s. User may need to be added to dialout group.",
-                self._cfg.port
+                self._cfg.port,
             )
 
         loop = asyncio.get_running_loop()
