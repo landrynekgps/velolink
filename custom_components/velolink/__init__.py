@@ -151,14 +151,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hub = VelolinkHub(hass, entry.entry_id, buses)
 
         scan_on_startup = entry.data.get(CONF_SCAN_ON_STARTUP, True)
-        
+
         # FIX: Dodano bardziej szczegółową obsługę błędów połączenia
         try:
             await hub.async_start(scan_on_startup=scan_on_startup)
-        except Exception as ex: # Złap wyjątki z połączenia (np. SerialException)
+        except Exception as ex:  # Złap wyjątki z połączenia (np. SerialException)
             _LOGGER.error("Failed to start Velolink hub connection: %s", ex)
             return False
-
 
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = hub

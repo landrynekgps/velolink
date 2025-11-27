@@ -813,9 +813,7 @@ class VelolinkHub:
         if key not in self._nodes:
             self._nodes[key] = node
             _LOGGER.info("New node discovered: %s", node)
-            async_dispatcher_send(
-                self._hass, signal_new_node(self._entry_id), node
-            )
+            async_dispatcher_send(self._hass, signal_new_node(self._entry_id), node)
 
     def get_node(self, bus_id: BusId, addr: Addr) -> VelolinkNode | None:
         """Get node by address."""
@@ -853,7 +851,7 @@ class VelolinkHub:
             channels = payload[1]
             model_len = payload[8]
             model = payload[9 : 9 + model_len].decode("ascii", errors="ignore")
-            
+
             return {
                 "type": "HELLO",
                 "addr": addr,
@@ -890,7 +888,7 @@ class VelolinkHub:
                 "ch": payload[0],
                 "value": val / 1000.0,
             }
-        
+
         return {"type": "UNKNOWN"}
 
     @staticmethod
