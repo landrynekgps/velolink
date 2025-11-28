@@ -7,15 +7,21 @@ from homeassistant.components.switch import SwitchDeviceClass
 
 DOMAIN = "velolink"
 
+# ... (reszta pliku bez zmian)
+
 # Config flow
 CONF_PORT1 = "port1"
 CONF_PORT2 = "port2"
-CONF_BAUDRATE = "baudrate"
+CONF_BAUDRATE = "baudrate"  # Stara stała, zostawiamy dla kompatybilności wstecznej
+CONF_BAUDRATE1 = "baudrate1"  # NOWA: Prędkość dla magistrali 1 (Bus 1)
+CONF_BAUDRATE2 = "baudrate2"  # NOWA: Prędkość dla magistrali 2 (Bus 2)
 CONF_RTS_TOGGLE = "rts_toggle"
 CONF_SCAN_ON_STARTUP = "scan_on_startup"
 CONF_GATEWAY_HOST = "gateway_host"
 CONF_GATEWAY_PORT = "gateway_port"
 CONF_CONNECTION_TYPE = "connection_type"
+
+# ... (reszta pliku bez zmian)
 
 # Connection types
 CONN_TYPE_SERIAL = "serial"

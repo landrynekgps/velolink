@@ -16,7 +16,8 @@ from .const import (
     DOMAIN,
     CONF_PORT1,
     CONF_PORT2,
-    CONF_BAUDRATE,
+    CONF_BAUDRATE1, # NOWE
+    CONF_BAUDRATE2, # NOWE
     CONF_RTS_TOGGLE,
     CONF_SCAN_ON_STARTUP,
     CONF_GATEWAY_HOST,
@@ -25,22 +26,9 @@ from .const import (
     CONN_TYPE_SERIAL,
     CONN_TYPE_TCP,
     CONN_TYPE_DEMO,
-    SERVICE_DISCOVERY_BUS1,
-    SERVICE_DISCOVERY_BUS2,
-    SERVICE_DISCOVERY_ALL,
-    SERVICE_SET_CHANNEL_CONFIG,
-    SERVICE_SET_DEVICE_NAME,
-    ATTR_BUS_ID,
-    ATTR_ADDRESS,
-    ATTR_CHANNEL,
-    ATTR_DEVICE_CLASS,
-    ATTR_POLARITY,
-    ATTR_DEVICE_NAME,
-    DEVICE_CLASS_INPUT_MAP,
-    DEVICE_CLASS_OUTPUT_MAP,
-    POLARITY_NO,
-    POLARITY_NC,
-    DEFAULT_BAUDRATE,
+    DEFAULT_BAUDRATE, # Używana jako domyślna, jeśli nie podano innej
+    DEFAULT_RTS_TOGGLE,
+    DEFAULT_SCAN_ON_STARTUP,
     signal_device_name_updated,
 )
 from .hub import VelolinkHub, VelolinkBusConfig
@@ -89,13 +77,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Serial connection
             port1 = entry.data.get(CONF_PORT1)
             port2 = entry.data.get(CONF_PORT2)
-            baudrate = entry.data.get(CONF_BAUDRATE, DEFAULT_BAUDRATE)
-            rts_toggle = entry.data.get(CONF_RTS_TOGGLE, False)
+            
+            # NOWE: Pobierz prędkości dla każdego busa z osobna
+            baudrate1 = entry.data.get(CONF_BAUDRATE1, DEFAULT_BAUDRATE)
+            baudrate2 = entry.data.get(CONF_BAUDRATE2, DEFAULT_BAUDRATE)
+
+            rts_toggle = entry.data.get(CONF_RTS_TOGGLE, DEFAULT_RTS_TOGGLE)
 
             if port1:
                 buses["bus1"] = VelolinkBusConfig(
                     port=port1,
-                    baudrate=baudrate,
+                    baudrate=baudrate1, # Użyj baudrate1
                     rts_toggle=rts_toggle,
                     name="Rozdzielnica",
                     transport="serial",
@@ -104,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if port2:
                 buses["bus2"] = VelolinkBusConfig(
                     port=port2,
-                    baudrate=baudrate,
+                    baudrate=baudrate2, # Użyj baudrate2
                     rts_toggle=rts_toggle,
                     name="Dom",
                     transport="serial",
@@ -151,13 +143,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hub = VelolinkHub(hass, entry.entry_id, buses)
 
         scan_on_startup = entry.data.get(CONF_SCAN_ON_STARTUP, True)
-
+        
         # FIX: Dodano bardziej szczegółową obsługę błędów połączenia
         try:
             await hub.async_start(scan_on_startup=scan_on_startup)
-        except Exception as ex:  # Złap wyjątki z połączenia (np. SerialException)
+        except Exception as ex: # Złap wyjątki z połączenia (np. SerialException)
             _LOGGER.error("Failed to start Velolink hub connection: %s", ex)
             return False
+
 
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = hub

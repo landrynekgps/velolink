@@ -16,7 +16,9 @@ from .const import (
     DOMAIN,
     CONF_PORT1,
     CONF_PORT2,
-    CONF_BAUDRATE,
+    CONF_BAUDRATE,  # Dla kompatybilności
+    CONF_BAUDRATE1, # NOWE
+    CONF_BAUDRATE2, # NOWE
     CONF_RTS_TOGGLE,
     CONF_SCAN_ON_STARTUP,
     CONF_GATEWAY_HOST,
@@ -24,7 +26,7 @@ from .const import (
     CONF_CONNECTION_TYPE,
     CONN_TYPE_SERIAL,
     CONN_TYPE_TCP,
-    DEFAULT_BAUDRATE,
+    DEFAULT_BAUDRATE, # Domyślna prędkość dla obu magistrali
     DEFAULT_RTS_TOGGLE,
     DEFAULT_SCAN_ON_STARTUP,
     DEFAULT_GATEWAY_PORT,
@@ -74,18 +76,7 @@ def _list_serial_ports() -> dict[str, str]:
             if any(
                 x in device_path
                 for x in [
-                    "ttyAMA",
-                    "serial",
-                    "ttySC",
-                    "ttyS0",
-                    "ttyAMA1",
-                    "ttyAMA2",
-                    "ttyAMA3",  # Dodatkowe porty AMA
-                    "serial0",
-                    "serial1",  # Alternatywne nazwy
-                    "ttyS1",
-                    "ttyS2",
-                    "ttyS3",  # Dodatkowe porty S
+                    "ttyAMA", "serial", "ttySC", "ttyS", "serial0", "serial1"
                 ]
             ):
                 ports[device_path] = f"Raspberry Pi HAT ({device_path})"
@@ -164,7 +155,7 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=schema)
 
     async def _create_serial_entry(
-        self, user_input: dict[str, Any], title: str, step_id: str
+        self, user_input: dict[str, Any], title: str
     ) -> FlowResult:
         """Helper to create a serial connection entry."""
         if user_input.get(CONF_PORT2) == "":
@@ -175,8 +166,8 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if port2 and port1 == port2:
             return self.async_show_form(
-                step_id=step_id,
-                data_schema=vol.Schema(self._get_serial_schema(step_id, user_input)),
+                step_id="serial_usb",
+                data_schema=vol.Schema(self._get_serial_schema("serial_usb", user_input)),
                 errors={"base": "ports_identical"},
             )
 
@@ -189,30 +180,31 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def _get_serial_schema(self, step_id: str, user_input: dict[str, Any]) -> dict:
         """Get correct schema for current step."""
+        # Bazowy schemat dla obu magistrali
         base_schema = {
+            vol.Required(CONF_RTS_TOGGLE, default=user_input.get(CONF_RTS_TOGGLE, DEFAULT_RTS_TOGGLE)): bool,
             vol.Required(
-                CONF_BAUDRATE, default=user_input.get(CONF_BAUDRATE, DEFAULT_BAUDRATE)
-            ): cv.positive_int,
-            vol.Required(
-                CONF_RTS_TOGGLE,
-                default=user_input.get(CONF_RTS_TOGGLE, DEFAULT_RTS_TOGGLE),
-            ): bool,
-            vol.Required(
-                CONF_SCAN_ON_STARTUP,
-                default=user_input.get(CONF_SCAN_ON_STARTUP, DEFAULT_SCAN_ON_STARTUP),
+                CONF_SCAN_ON_STARTUP, default=user_input.get(CONF_SCAN_ON_STARTUP, DEFAULT_SCAN_ON_STARTUP)
             ): bool,
         }
 
+        # Dodajemy pola wyboru portów
         if step_id == "serial_hat":
             if self._hat_ports and len(self._hat_ports) > 1:
                 base_schema[vol.Required(CONF_PORT1)] = vol.In(self._hat_ports)
         elif step_id == "serial_usb":
             base_schema[vol.Required(CONF_PORT1)] = vol.In(self._usb_ports)
             # TEN FRAGMENT JEST KLUCZOWY - UPENIONIA, ŻE WIDZI DRUGIE POLE WYBORU
-            base_schema[vol.Optional(CONF_PORT2)] = vol.In(
-                {"": "(brak)"} | self._usb_ports
-            )
-
+            base_schema[vol.Optional(CONF_PORT2)] = vol.In({"": "(brak)"} | self._usb_ports)
+        
+        # NOWE: Dodajemy pola prędkości, jeśli wybrano więcej niż jeden port
+        if user_input.get(CONF_PORT2):
+            base_schema[vol.Required(CONF_BAUDRATE1, default=user_input.get(CONF_BAUDRATE1, DEFAULT_BAUDRATE))] = cv.positive_int
+            base_schema[vol.Required(CONF_BAUDRATE2, default=user_input.get(CONF_BAUDRATE2, DEFAULT_BAUDRATE))] = cv.positive_int
+        else:
+            # Jeśli jest tylko port1, użyj jednej prędkości dla obu (dla kompatybilności wstecznej)
+            base_schema[vol.Required(CONF_BAUDRATE, default=user_input.get(CONF_BAUDRATE, DEFAULT_BAUDRATE))] = cv.positive_int
+        
         return base_schema
 
     async def async_step_serial_hat(
@@ -225,7 +217,9 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             for p, d in all_ports.items()
             if any(
                 x in p
-                for x in ["ttyAMA", "serial", "ttySC", "ttyS", "serial0", "serial1"]
+                for x in [
+                    "ttyAMA", "serial", "ttySC", "ttyS", "serial0", "serial1"
+                ]
             )
         }
 
@@ -242,36 +236,19 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             _LOGGER.info("Using HAT port: %s", selected_port)
             user_input[CONF_PORT1] = selected_port
-            return await self._create_serial_entry(
-                user_input, "Velolink RPi HAT", "serial_hat"
-            )
+            return await self.__create_serial_entry(user_input, "Velolink RPi HAT")
 
         # Jeśli jest więcej niż jeden port HAT, pozwól użytkownikowi wybrać
         if len(self._hat_ports) > 1:
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_PORT1): vol.In(self._hat_ports),
-                    vol.Required(
-                        CONF_BAUDRATE, default=DEFAULT_BAUDRATE
-                    ): cv.positive_int,
-                    vol.Required(CONF_RTS_TOGGLE, default=DEFAULT_RTS_TOGGLE): bool,
-                    vol.Required(
-                        CONF_SCAN_ON_STARTUP, default=DEFAULT_SCAN_ON_STARTUP
-                    ): bool,
-                }
-            )
+            schema = vol.Schema(self._get_serial_schema("serial_hat", user_input))
         else:  # Jeśli jest tylko jeden port HAT, użyj go automatycznie
-            schema = vol.Schema(
-                {
-                    vol.Required(
-                        CONF_BAUDRATE, default=DEFAULT_BAUDRATE
-                    ): cv.positive_int,
-                    vol.Required(CONF_RTS_TOGGLE, default=DEFAULT_RTS_TOGGLE): bool,
-                    vol.Required(
-                        CONF_SCAN_ON_STARTUP, default=DEFAULT_SCAN_ON_STARTUP
-                    ): bool,
-                }
-            )
+            schema = vol.Schema({
+                vol.Required(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): cv.positive_int,
+                vol.Required(CONF_RTS_TOGGLE, default=DEFAULT_RTS_TOGGLE): bool,
+                vol.Required(
+                    CONF_SCAN_ON_STARTUP, default=DEFAULT_SCAN_ON_STARTUP
+                ): bool,
+            })
 
         return self.async_show_form(step_id="serial_hat", data_schema=schema)
 
@@ -281,7 +258,8 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle USB adapter serial connection setup."""
         all_ports = await self.hass.async_add_executor_job(_list_serial_ports)
         self._usb_ports = {
-            p: d for p, d in all_ports.items() if "ttyUSB" in p or "ttyACM" in p
+            p: d
+            for p, d in all_ports.items() if "ttyUSB" in p or "ttyACM" in p
         }
 
         if not self._usb_ports:
@@ -289,22 +267,10 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             return await self._create_serial_entry(
-                user_input, f"Velolink USB ({user_input[CONF_PORT1]})", "serial_usb"
+                user_input, f"Velolink USB ({user_input[CONF_PORT1]})"
             )
 
-        # TEN SCHEMAT JEST KLUCZOWY I POKAZUJE OBA POLA WYBORU
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_PORT1): vol.In(self._usb_ports),
-                vol.Optional(CONF_PORT2): vol.In({"": "(brak)"} | self._usb_ports),
-                vol.Required(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): cv.positive_int,
-                vol.Required(CONF_RTS_TOGGLE, default=DEFAULT_RTS_TOGGLE): bool,
-                vol.Required(
-                    CONF_SCAN_ON_STARTUP, default=DEFAULT_SCAN_ON_STARTUP
-                ): bool,
-            }
-        )
-
+        schema = vol.Schema(self._get_serial_schema("serial_usb", user_input))
         return self.async_show_form(step_id="serial_usb", data_schema=schema)
 
     async def async_step_tcp(
@@ -320,8 +286,7 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
             return self.async_create_entry(
-                title=f"Velolink Gateway ({host})",
-                data=user_input,
+                title=f"Velolink Gateway ({host})", data=user_input
             )
 
         schema = vol.Schema(
@@ -558,7 +523,7 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Save the new device name."""
         if user_input is not None and self._device_to_edit:
-            bus_id, addr = self._device_to_edit.split("-")
+            parts = self._device_to_edit.split("-")
 
             await self.hass.services.async_call(
                 DOMAIN,
