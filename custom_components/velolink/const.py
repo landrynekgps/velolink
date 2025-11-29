@@ -29,22 +29,27 @@ DEFAULT_RTS_TOGGLE = False
 DEFAULT_SCAN_ON_STARTUP = True
 DEFAULT_GATEWAY_PORT = 5485
 
+
 # Signals
 def signal_new_node(entry_id: str) -> str:
     """Signal for new node discovered."""
     return f"{DOMAIN}.{entry_id}.new_node"
 
+
 def signal_discovery_complete(entry_id: str) -> str:
     """Signal for discovery complete."""
     return f"{DOMAIN}.{entry_id}.discovery_complete"
+
 
 def signal_channel_config_updated(entry_id: str) -> str:
     """Signal for channel config updated."""
     return f"{DOMAIN}.{entry_id}.config_updated"
 
+
 def signal_device_name_updated(entry_id: str) -> str:
     """Signal for device name updated."""
     return f"{DOMAIN}.{entry_id}.device_name_updated"
+
 
 # Intervals
 DISCOVERY_INTERVAL_S = 30.0
