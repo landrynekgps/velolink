@@ -255,7 +255,8 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             _LOGGER.info("Using HAT port: %s", selected_port)
             user_input[CONF_PORT1] = selected_port
-            return await self.__create_serial_entry(user_input, "Velolink RPi HAT")
+            # POPRAWKA: Poprawiono literówkę z __create_serial_entry na _create_serial_entry
+            return await self._create_serial_entry(user_input, "Velolink RPi HAT")
 
         # Jeśli jest więcej niż jeden port HAT, pozwól użytkownikowi wybrać
         if len(self._hat_ports) > 1:
@@ -544,15 +545,18 @@ class VelolinkOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Save the new device name."""
+        # POPRAWKA: Naprawiono błąd, gdzie bus_id i addr były używane przed zdefiniowaniem
         if user_input is not None and self._device_to_edit:
             parts = self._device_to_edit.split("-")
+            bus_id = parts[0]
+            addr = int(parts[1])
 
             await self.hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_DEVICE_NAME,
                 {
                     ATTR_BUS_ID: bus_id,
-                    ATTR_ADDRESS: int(addr),
+                    ATTR_ADDRESS: addr,
                     ATTR_DEVICE_NAME: user_input["new_name"],
                 },
                 blocking=True,

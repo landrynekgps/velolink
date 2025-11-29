@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.const import Platform
+from homeassistant.exceptions import ConfigEntryNotReady  # POPRAWKA: Dodano import
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -30,6 +31,13 @@ from .const import (
     DEFAULT_RTS_TOGGLE,
     DEFAULT_SCAN_ON_STARTUP,
     signal_device_name_updated,
+    # POPRAWKA: Dodano importy atrybutów usług
+    ATTR_BUS_ID,
+    ATTR_ADDRESS,
+    ATTR_CHANNEL,
+    ATTR_DEVICE_CLASS,
+    ATTR_POLARITY,
+    ATTR_DEVICE_NAME,
 )
 from .hub import VelolinkHub, VelolinkBusConfig
 from .storage import VelolinkStorage
@@ -144,12 +152,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         scan_on_startup = entry.data.get(CONF_SCAN_ON_STARTUP, True)
 
-        # FIX: Dodano bardziej szczegółową obsługę błędów połączenia
+        # POPRAWKA: Dodano bardziej szczegółową obsługę błędów połączenia
         try:
             await hub.async_start(scan_on_startup=scan_on_startup)
         except Exception as ex:  # Złap wyjątki z połączenia (np. SerialException)
             _LOGGER.error("Failed to start Velolink hub connection: %s", ex)
-            return False
+            # POPRAWKA: Rzucenie ConfigEntryNotReady zamiast zwracania False
+            raise ConfigEntryNotReady from ex
 
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = hub
