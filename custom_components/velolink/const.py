@@ -10,9 +10,7 @@ DOMAIN = "velolink"
 # Config flow
 CONF_PORT1 = "port1"
 CONF_PORT2 = "port2"
-CONF_BAUDRATE = "baudrate"  # Stara stała, zostawiamy dla kompatybilności wstecznej
-CONF_BAUDRATE1 = "baudrate1"  # NOWA: Prędkość dla magistrali 1 (Bus 1)
-CONF_BAUDRATE2 = "baudrate2"  # NOWA: Prędkość dla magistrali 2 (Bus 2)
+CONF_BAUDRATE = "baudrate"
 CONF_RTS_TOGGLE = "rts_toggle"
 CONF_SCAN_ON_STARTUP = "scan_on_startup"
 CONF_GATEWAY_HOST = "gateway_host"
@@ -22,7 +20,7 @@ CONF_CONNECTION_TYPE = "connection_type"
 # Connection types
 CONN_TYPE_SERIAL = "serial"
 CONN_TYPE_TCP = "tcp"
-CONN_TYPE_DEMO = "demo"
+# USUNIĘTO: CONN_TYPE_DEMO = "demo"
 
 DEFAULT_BAUDRATE = 115200
 DEFAULT_RTS_TOGGLE = False
@@ -46,9 +44,10 @@ def signal_channel_config_updated(entry_id: str) -> str:
     return f"{DOMAIN}.{entry_id}.config_updated"
 
 
-def signal_device_name_updated(entry_id: str) -> str:
-    """Signal for device name updated."""
-    return f"{DOMAIN}.{entry_id}.device_name_updated"
+# USUNIĘTO: Funkcja signal_device_name_updated
+# def signal_device_name_updated(entry_id: str) -> str:
+#     """Signal for device name updated."""
+#     return f"{DOMAIN}.{entry_id}.device_name_updated"
 
 
 # Intervals
@@ -100,16 +99,15 @@ SERVICE_DISCOVERY_BUS1 = "discovery_bus1"
 SERVICE_DISCOVERY_BUS2 = "discovery_bus2"
 SERVICE_DISCOVERY_ALL = "discovery_all"
 SERVICE_SET_CHANNEL_CONFIG = "set_channel_config"
-SERVICE_SET_DEVICE_NAME = "set_device_name"
+# USUNIĘTO: SERVICE_SET_DEVICE_NAME = "set_device_name"
 
 # Service attributes
-# POPRAWKA: Dodano brakujące stałe atrybutów usług
 ATTR_BUS_ID = "bus_id"
 ATTR_ADDRESS = "address"
 ATTR_CHANNEL = "channel"
 ATTR_DEVICE_CLASS = "device_class"
 ATTR_POLARITY = "polarity"
-ATTR_DEVICE_NAME = "device_name"
+# USUNIĘTO: ATTR_DEVICE_NAME = "device_name"
 
 
 # Protocol - Function Codes

@@ -20,7 +20,7 @@ from .const import (
     DEVICE_CLASS_OUTPUT_MAP,
     POLARITY_NC,
     signal_new_node,
-    signal_device_name_updated,
+    # USUNIĘTO: signal_device_name_updated,
 )
 from .hub import VelolinkHub, VelolinkNode
 from .storage import VelolinkStorage
@@ -87,7 +87,7 @@ class VelolinkOutputEntity(SwitchEntity):
         self._ch = ch
         self._state = False
         self._unsub: Callable[[], None] | None = None
-        self._unsub_name_update: Callable[[], None] | None = None
+        # USUNIĘTO: self._unsub_name_update: Callable[[], None] | None = None
 
         self._load_config()
 
@@ -185,23 +185,21 @@ class VelolinkOutputEntity(SwitchEntity):
             self._node.bus_id, self._node.address, self._ch, _on_change
         )
 
-        @callback
-        def _on_name_update(data: dict) -> None:
-            if (
-                data["bus_id"] == self._node.bus_id
-                and data["address"] == self._node.address
-            ):
-                self.async_write_ha_state()
+        # USUNIĘTO: Subskrypcja aktualizacji nazwy
+        # @callback
+        # def _on_name_update(data: dict) -> None:
+        #     ...
 
-        self._unsub_name_update = async_dispatcher_connect(
-            self._hass, signal_device_name_updated(self._entry_id), _on_name_update
-        )
+        # self._unsub_name_update = async_dispatcher_connect(
+        #     self._hass, signal_device_name_updated(self._entry_id), _on_name_update
+        # )
 
     async def async_will_remove_from_hass(self) -> None:
         """Handle entity removal."""
         if self._unsub:
             self._unsub()
             self._unsub = None
-        if self._unsub_name_update:
-            self._unsub_name_update()
-            self._unsub_name_update = None
+        # USUNIĘTO: Anulowanie subskrypcji nazwy
+        # if self._unsub_name_update:
+        #     self._unsub_name_update()
+        #     self._unsub_name_update = None

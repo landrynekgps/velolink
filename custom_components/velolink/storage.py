@@ -87,12 +87,7 @@ class VelolinkStorage:
         key = f"{bus_id}-{addr}"
         return self._data.get("devices", {}).get(key, {}).get("name")
 
-    async def async_set_device_name(self, bus_id: str, addr: int, name: str) -> None:
-        """Set custom device name."""
-        key = f"{bus_id}-{addr}"
-        if "devices" not in self._data:
-            self._data["devices"] = {}
-
-        self._data["devices"].setdefault(key, {})["name"] = name
-        await self.async_save()
-        _LOGGER.info("Set device name for %s: %s", key, name)
+    # USUNIĘTO: Metoda async_set_device_name
+    # async def async_set_device_name(self, bus_id: str, addr: int, name: str) -> None:
+    #     """Set custom device name."""
+    #     ...

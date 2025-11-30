@@ -9,7 +9,6 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.const import Platform
-from homeassistant.exceptions import ConfigEntryNotReady  # POPRAWKA: Dodano import
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -17,8 +16,7 @@ from .const import (
     DOMAIN,
     CONF_PORT1,
     CONF_PORT2,
-    CONF_BAUDRATE1,  # NOWE
-    CONF_BAUDRATE2,  # NOWE
+    CONF_BAUDRATE,
     CONF_RTS_TOGGLE,
     CONF_SCAN_ON_STARTUP,
     CONF_GATEWAY_HOST,
@@ -26,18 +24,24 @@ from .const import (
     CONF_CONNECTION_TYPE,
     CONN_TYPE_SERIAL,
     CONN_TYPE_TCP,
-    CONN_TYPE_DEMO,
-    DEFAULT_BAUDRATE,  # Używana jako domyślna, jeśli nie podano innej
-    DEFAULT_RTS_TOGGLE,
-    DEFAULT_SCAN_ON_STARTUP,
-    signal_device_name_updated,
-    # POPRAWKA: Dodano importy atrybutów usług
+    # USUNIĘTO: CONN_TYPE_DEMO,
+    SERVICE_DISCOVERY_BUS1,
+    SERVICE_DISCOVERY_BUS2,
+    SERVICE_DISCOVERY_ALL,
+    SERVICE_SET_CHANNEL_CONFIG,
+    # USUNIĘTO: SERVICE_SET_DEVICE_NAME,
     ATTR_BUS_ID,
     ATTR_ADDRESS,
     ATTR_CHANNEL,
     ATTR_DEVICE_CLASS,
     ATTR_POLARITY,
-    ATTR_DEVICE_NAME,
+    # USUNIĘTO: ATTR_DEVICE_NAME,
+    DEVICE_CLASS_INPUT_MAP,
+    DEVICE_CLASS_OUTPUT_MAP,
+    POLARITY_NO,
+    POLARITY_NC,
+    DEFAULT_BAUDRATE,
+    # USUNIĘTO: signal_device_name_updated,
 )
 from .hub import VelolinkHub, VelolinkBusConfig
 from .storage import VelolinkStorage
@@ -65,13 +69,14 @@ SERVICE_SET_CHANNEL_CONFIG_SCHEMA = vol.Schema(
     }
 )
 
-SERVICE_SET_DEVICE_NAME_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_BUS_ID): vol.In(["bus1", "bus2"]),
-        vol.Required(ATTR_ADDRESS): vol.Range(min=1, max=254),
-        vol.Required(ATTR_DEVICE_NAME): vol.All(str, vol.Length(min=1, max=64)),
-    }
-)
+# USUNIĘTO: SERVICE_SET_DEVICE_NAME_SCHEMA
+# SERVICE_SET_DEVICE_NAME_SCHEMA = vol.Schema(
+#     {
+#         vol.Required(ATTR_BUS_ID): vol.In(["bus1", "bus2"]),
+#         vol.Required(ATTR_ADDRESS): vol.Range(min=1, max=254),
+#         vol.Required(ATTR_DEVICE_NAME): vol.All(str, vol.Length(min=1, max=64)),
+#     }
+# )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -85,17 +90,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Serial connection
             port1 = entry.data.get(CONF_PORT1)
             port2 = entry.data.get(CONF_PORT2)
-
-            # NOWE: Pobierz prędkości dla każdego busa z osobna
-            baudrate1 = entry.data.get(CONF_BAUDRATE1, DEFAULT_BAUDRATE)
-            baudrate2 = entry.data.get(CONF_BAUDRATE2, DEFAULT_BAUDRATE)
-
-            rts_toggle = entry.data.get(CONF_RTS_TOGGLE, DEFAULT_RTS_TOGGLE)
+            baudrate = entry.data.get(CONF_BAUDRATE, DEFAULT_BAUDRATE)
+            baudrate2 = entry.data.get("baudrate2", baudrate) # DODANO: baudrate2
+            rts_toggle = entry.data.get(CONF_RTS_TOGGLE, False)
 
             if port1:
                 buses["bus1"] = VelolinkBusConfig(
                     port=port1,
-                    baudrate=baudrate1,  # Użyj baudrate1
+                    baudrate=baudrate,
                     rts_toggle=rts_toggle,
                     name="Rozdzielnica",
                     transport="serial",
@@ -104,7 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if port2:
                 buses["bus2"] = VelolinkBusConfig(
                     port=port2,
-                    baudrate=baudrate2,  # Użyj baudrate2
+                    baudrate=baudrate2, # DODANO: Użycie baudrate2
                     rts_toggle=rts_toggle,
                     name="Dom",
                     transport="serial",
@@ -128,16 +130,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 transport="tcp",
             )
 
-        elif connection_type == CONN_TYPE_DEMO:
-            # Demo connection
-            buses["bus1"] = VelolinkBusConfig(
-                name="Demo Bus 1",
-                transport="demo",
-            )
-            buses["bus2"] = VelolinkBusConfig(
-                name="Demo Bus 2",
-                transport="demo",
-            )
+        # USUNIĘTO: Obsługa CONN_TYPE_DEMO
+        # elif connection_type == CONN_TYPE_DEMO:
+        #     # Demo connection
+        #     buses["bus1"] = VelolinkBusConfig(
+        #         name="Demo Bus 1",
+        #         transport="demo",
+        #     )
+        #     buses["bus2"] = VelolinkBusConfig(
+        #         name="Demo Bus 2",
+        #         transport="demo",
+        #     )
 
         if not buses:
             _LOGGER.error("No buses configured for Velolink")
@@ -152,13 +155,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         scan_on_startup = entry.data.get(CONF_SCAN_ON_STARTUP, True)
 
-        # POPRAWKA: Dodano bardziej szczegółową obsługę błędów połączenia
+        # FIX: Dodano bardziej szczegółową obsługę błędów połączenia
         try:
             await hub.async_start(scan_on_startup=scan_on_startup)
         except Exception as ex:  # Złap wyjątki z połączenia (np. SerialException)
             _LOGGER.error("Failed to start Velolink hub connection: %s", ex)
-            # POPRAWKA: Rzucenie ConfigEntryNotReady zamiast zwracania False
-            raise ConfigEntryNotReady from ex
+            return False
 
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = hub
@@ -221,36 +223,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.error("Failed to set channel config: %s", ex)
                 raise
 
-        async def handle_set_device_name(call: ServiceCall) -> None:
-            """Handle set device name service."""
-            try:
-                bus_id = call.data[ATTR_BUS_ID]
-                addr = call.data[ATTR_ADDRESS]
-                name = call.data[ATTR_DEVICE_NAME]
-
-                # Validate bus exists
-                if bus_id not in hub._transports:
-                    raise ValueError(f"Bus {bus_id} not found")
-
-                # Validate device exists
-                if not hub.get_node(bus_id, addr):
-                    _LOGGER.warning(
-                        "Device %s:%d not found, creating name entry anyway",
-                        bus_id,
-                        addr,
-                    )
-
-                await storage.async_set_device_name(bus_id, addr, name)
-
-                # Send signal to update entities
-                async_dispatcher_send(
-                    hass,
-                    signal_device_name_updated(entry.entry_id),
-                    {"bus_id": bus_id, "address": addr},
-                )
-            except Exception as ex:
-                _LOGGER.error("Failed to set device name: %s", ex)
-                raise
+        # USUNIĘTO: Funkcja handle_set_device_name
+        # async def handle_set_device_name(call: ServiceCall) -> None:
+        #     ...
 
         # Register all services
         hass.services.async_register(
@@ -268,12 +243,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             handle_set_channel_config,
             schema=SERVICE_SET_CHANNEL_CONFIG_SCHEMA,
         )
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_SET_DEVICE_NAME,
-            handle_set_device_name,
-            schema=SERVICE_SET_DEVICE_NAME_SCHEMA,
-        )
+        # USUNIĘTO: Rejestracja usługi SERVICE_SET_DEVICE_NAME
+        # hass.services.async_register(
+        #     DOMAIN,
+        #     SERVICE_SET_DEVICE_NAME,
+        #     handle_set_device_name,
+        #     schema=SERVICE_SET_DEVICE_NAME_SCHEMA,
+        # )
 
         entry.async_on_unload(entry.add_update_listener(_options_updated))
         return True
@@ -302,6 +278,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_remove(DOMAIN, SERVICE_DISCOVERY_BUS2)
         hass.services.async_remove(DOMAIN, SERVICE_DISCOVERY_ALL)
         hass.services.async_remove(DOMAIN, SERVICE_SET_CHANNEL_CONFIG)
-        hass.services.async_remove(DOMAIN, SERVICE_SET_DEVICE_NAME)
+        # USUNIĘTO: Usuwanie usługi SERVICE_SET_DEVICE_NAME
+        # hass.services.async_remove(DOMAIN, SERVICE_SET_DEVICE_NAME)
 
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
