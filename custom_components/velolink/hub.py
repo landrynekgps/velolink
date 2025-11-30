@@ -412,7 +412,7 @@ class VelolinkHub:
         self._entry_id = entry_id
         self._buses_cfg = buses
         self._transports: Dict[
-            BusId, SerialTransport | TcpTransport # | DemoTransport
+            BusId, SerialTransport | TcpTransport  # | DemoTransport
         ] = {}
         self._nodes: Dict[Tuple[BusId, Addr], VelolinkNode] = {}
 

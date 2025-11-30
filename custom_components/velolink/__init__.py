@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             port1 = entry.data.get(CONF_PORT1)
             port2 = entry.data.get(CONF_PORT2)
             baudrate = entry.data.get(CONF_BAUDRATE, DEFAULT_BAUDRATE)
-            baudrate2 = entry.data.get("baudrate2", baudrate) # DODANO: baudrate2
+            baudrate2 = entry.data.get("baudrate2", baudrate)  # DODANO: baudrate2
             rts_toggle = entry.data.get(CONF_RTS_TOGGLE, False)
 
             if port1:
@@ -106,7 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if port2:
                 buses["bus2"] = VelolinkBusConfig(
                     port=port2,
-                    baudrate=baudrate2, # DODANO: Użycie baudrate2
+                    baudrate=baudrate2,  # DODANO: Użycie baudrate2
                     rts_toggle=rts_toggle,
                     name="Dom",
                     transport="serial",

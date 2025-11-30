@@ -200,34 +200,46 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 base_schema[vol.Optional(CONF_PORT2)] = vol.In(
                     {"": "(brak)"} | self._hat_ports
                 )
-            
+
             # DODANO: Oddzielny baudrate dla każdego portu
-            base_schema[vol.Required(
-                CONF_BAUDRATE, default=user_input.get(CONF_BAUDRATE, DEFAULT_BAUDRATE)
-            )] = cv.positive_int
-            
+            base_schema[
+                vol.Required(
+                    CONF_BAUDRATE,
+                    default=user_input.get(CONF_BAUDRATE, DEFAULT_BAUDRATE),
+                )
+            ] = cv.positive_int
+
             # DODANO: Drugi baudrate jeśli wybrano port2
             if user_input and user_input.get(CONF_PORT2):
-                base_schema[vol.Required(
-                    "baudrate2", default=user_input.get("baudrate2", DEFAULT_BAUDRATE)
-                )] = cv.positive_int
+                base_schema[
+                    vol.Required(
+                        "baudrate2",
+                        default=user_input.get("baudrate2", DEFAULT_BAUDRATE),
+                    )
+                ] = cv.positive_int
 
         elif step_id == "serial_usb":
             base_schema[vol.Required(CONF_PORT1)] = vol.In(self._usb_ports)
             base_schema[vol.Optional(CONF_PORT2)] = vol.In(
                 {"": "(brak)"} | self._usb_ports
             )
-            
+
             # DODANO: Oddzielny baudrate dla każdego portu
-            base_schema[vol.Required(
-                CONF_BAUDRATE, default=user_input.get(CONF_BAUDRATE, DEFAULT_BAUDRATE)
-            )] = cv.positive_int
-            
+            base_schema[
+                vol.Required(
+                    CONF_BAUDRATE,
+                    default=user_input.get(CONF_BAUDRATE, DEFAULT_BAUDRATE),
+                )
+            ] = cv.positive_int
+
             # DODANO: Drugi baudrate jeśli wybrano port2
             if user_input and user_input.get(CONF_PORT2):
-                base_schema[vol.Required(
-                    "baudrate2", default=user_input.get("baudrate2", DEFAULT_BAUDRATE)
-                )] = cv.positive_int
+                base_schema[
+                    vol.Required(
+                        "baudrate2",
+                        default=user_input.get("baudrate2", DEFAULT_BAUDRATE),
+                    )
+                ] = cv.positive_int
 
         return base_schema
 
@@ -258,7 +270,7 @@ class VelolinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             _LOGGER.info("Using HAT port: %s", selected_port)
             user_input[CONF_PORT1] = selected_port
-            
+
             # DODANO: Obsłuż drugi port i baudrate
             if user_input.get(CONF_PORT2):
                 if not user_input.get("baudrate2"):
