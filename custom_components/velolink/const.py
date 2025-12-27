@@ -18,9 +18,11 @@ FRAME_PREAMBLE = bytes([0xAA, 0x55])
 TCP_HEADER_MAGIC = bytes([0x56, 0x4C])
 TCP_PROTOCOL_VERSION = 0x01
 
+
 # Signals
 def signal_new_node(entry_id: str) -> str:
     return f"{DOMAIN}.{entry_id}.new_node"
+
 
 # Node kinds
 NODE_KIND_INPUT = "input"
@@ -39,6 +41,7 @@ DEVICE_CLASS_OUTPUT_MAP = {
     "switch": SwitchDeviceClass.SWITCH,
 }
 
+
 # Function Codes
 class FunctionCode(IntEnum):
     DISCOVER = 0x01
@@ -47,6 +50,7 @@ class FunctionCode(IntEnum):
     SET_PWM = 0x11
     BUTTON_EVENT = 0x24
     ANALOG_SAMPLE = 0x23
+
 
 # Intervals
 GATEWAY_RECONNECT_DELAY_S = 5.0
