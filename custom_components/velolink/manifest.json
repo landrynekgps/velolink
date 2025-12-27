@@ -1,13 +1,12 @@
 {
   "domain": "velolink",
-  "name": "Velolink",
-  "version": "0.0.1",
-  "icon": "https://raw.githubusercontent.com/landrynekgps/velolink-ha/main/custom_components/velolink/icon.png",
-  "documentation": "https://github.com/landrynekgps/velolink-ha",
-  "issue_tracker": "https://github.com/landrynekgps/velolink-ha/issues",
-  "requirements": ["pyserial-asyncio>=0.6"],
-  "codeowners": ["@landrynekgps"],
-  "iot_class": "local_push",
+  "name": "Velolink Integration",
+  "codeowners": [],
   "config_flow": true,
-  "loggers": ["custom_components.velolink"]
+  "dependencies": [],
+  "documentation": "https://github.com/twoje-repo/velolink",
+  "iot_class": "local_push",
+  "requirements": ["zeroconf==0.132.0"],
+  "version": "2.0.0",
+  "zeroconf": ["_velolink._tcp.local"]
 }
